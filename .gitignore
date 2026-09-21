@@ -15,6 +15,11 @@ venv/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+# Connector runtime output: OCSF exports, dead letters, overflow spool, file-tail offsets
+data/export/
+data/dead_letter/
+data/spool/
+data/state/
 .data/
 suricata-logs/
 
