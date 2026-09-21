@@ -1,0 +1,4 @@
+<9999>2026-99-99T99:99:99Z INVALID_HEADER host-broken no-pri
+CEF:INVALID_VERSION|BrokenVendor|NoProduct
+date=invalid time=unknown corrupt_kv_token==="broken"
+{"corrupted_json": true, "unclosed_bracket": 

@@ -1,0 +1,10 @@
+CEF:0|Palo Alto Networks|PAN-OS|10.1.0|traffic|start|1|src=192.168.1.100 dst=10.0.0.50 spt=54321 dpt=443 proto=tcp act=allow
+CEF:0|CheckPoint|SmartDefense|R80.40|1000|Port Scan|5|src=172.16.0.15 dst=192.168.1.1 proto=tcp act=drop
+CEF:0|Imperva|SecureSphere|14.3|WAF|SQL Injection|8|src=203.0.113.45 dst=10.1.1.20 dpt=80 act=block
+CEF:0|Trend Micro|Deep Security|12.0|3000|Malware Detected|9|src=192.168.2.10 file=eicar.txt act=quarantine
+CEF:0|Fortinet|FortiGate|6.4.5|10002|IPS Attack|7|src=198.51.100.22 dst=10.0.0.1 dpt=8080 act=dropped
+CEF:0|Cisco|Firepower|6.6.0|101|DNS Query|2|src=192.168.1.50 dst=8.8.8.8 request=malicious.domain.com act=allow
+CEF:0|F5|BIG-IP|15.1.0|1001|ASM Attack|8|src=198.51.100.88 dst=10.2.2.4 dpt=443 attack=XSS act=blocked
+CEF:0|CrowdStrike|Falcon|5.30|102|Suspicious Process|6|host=WORKSTATION01 user=jdoe process=powershell.exe act=detect
+CEF:0|Symantec|Endpoint Protection|14.2|2001|Virus Found|9|src=192.168.5.12 path=C:\Temp\mal.exe act=clean
+CEF:0|Palo Alto Networks|PAN-OS|10.1.0|threat|vulnerability|8|src=198.51.100.99 dst=10.0.0.5 dpt=80 act=reset-both

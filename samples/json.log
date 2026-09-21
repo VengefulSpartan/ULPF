@@ -1,0 +1,10 @@
+{"timestamp":"2026-09-15T18:00:00Z","event_type":"waf_block","client_ip":"198.51.100.12","uri":"/api/v1/users","rule_id":"SQLi-942100","action":"block"}
+{"time":"2026-09-15T18:00:01Z","src_ip":"192.168.1.20","dst_ip":"10.0.0.1","proto":"TCP","src_port":51234,"dst_port":80,"bytes_sent":1024,"bytes_refd":4096}
+{"eventVersion":"1.08","userIdentity":{"type":"IAMUser","arn":"arn:aws:iam::123456789012:user/admin"},"eventTime":"2026-09-15T18:00:02Z","eventName":"ConsoleLogin","sourceIPAddress":"203.0.113.5"}
+{"timestamp":"2026-09-15T18:00:03Z","src_ip":"10.1.2.3","dest_ip":"10.1.2.255","proto":"UDP","app":"dns","dns":{"type":"query","rrname":"example.com","rrtype":"A"}}
+{"method":"POST","path":"/login","status":401,"ip":"192.168.1.105","user_agent":"Mozilla/5.0","response_time_ms":45}
+{"log_level":"ERROR","service":"auth-service","message":"Failed login attempt","username":"john_doe","attempt":3,"ip_address":"198.51.100.44"}
+{"alert":{"action":"blocked","gid":1,"signature_id":2000001,"rev":1,"signature":"ET MALWARE Suspicious User-Agent","category":"A Network Trojan was detected"}}
+{"type":"audit","user":"root","action":"USER_MGMT","detail":"Added user sysadmin to sudoers","timestamp":1726423200}
+{"vendor":"Cloudflare","ray_id":"8c1234567890abcd","client_ip":"192.0.2.1","host":"corp.example.com","status":200,"cache_status":"HIT"}
+{"version":2,"account_id":"123456789012","interface_id":"eni-12345678","srcaddr":"172.31.1.100","dstaddr":"10.0.1.50","srcport":443,"dstport":52100,"action":"ACCEPT"}

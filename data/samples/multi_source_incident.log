@@ -1,0 +1,12 @@
+# Multi-Device Perimeter Security Incident Telemetry
+# Stage 1: External Contractor VPN Ingress
+date=2026-09-20 time=14:00:01 devname="FGT-VPN" type="vpn" action="login" status="success" user="contractor_bob" srcip=198.51.100.22 dstip=10.0.1.15 auth_method="MFA-OTP"
+# Stage 2: Cisco ASA Border Flow
+<166>Sep 20 14:00:15 ciscoasa %ASA-6-302013: Built inbound TCP connection 88123 for outside:198.51.100.22/51200 to inside:10.0.1.15/443
+# Stage 3: Internal Pivot to DMZ Database
+<166>Sep 20 14:00:30 ciscoasa %ASA-6-302013: Built inside TCP connection 88124 for inside:10.0.1.15/49152 to dmz:192.168.1.50/445
+CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|start|3|src=10.0.1.15 dst=192.168.1.50 spt=49152 dpt=445 proto=TCP act=allow deviceReceiptTime=2026-09-20T14:00:32Z
+# Stage 4: IDS Detection of SMB Exploit
+{"timestamp":"2026-09-20T14:00:45.000000+0000","event_type":"alert","src_ip":"10.0.1.15","src_port":49152,"dest_ip":"192.168.1.50","dest_port":445,"proto":"TCP","alert":{"action":"alerted","signature":"ET EXPLOIT EternalBlue SMB MS17-010","severity":"High","category":"Attempted Administrator Privilege Gain"}}
+# Stage 5: Firewall Threat Drop & Quarantine
+CEF:0|Palo Alto Networks|PAN-OS|10.1|THREAT|vulnerability|5|src=10.0.1.15 dst=192.168.1.50 spt=49152 dpt=445 proto=TCP act=drop deviceReceiptTime=2026-09-20T14:00:46Z threat_name="SMB Remote Code Execution"

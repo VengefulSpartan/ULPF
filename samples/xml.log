@@ -1,0 +1,10 @@
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><EventID>4624</EventID><TimeCreated SystemTime="2026-09-15T18:00:00Z"/><Computer>DC01.corp.local</Computer></System><EventData><Data Name="TargetUserName">Administrator</Data><Data Name="IpAddress">192.168.1.50</Data></EventData></Event>
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><EventID>4625</EventID><TimeCreated SystemTime="2026-09-15T18:00:01Z"/><Computer>DC01.corp.local</Computer></System><EventData><Data Name="TargetUserName">guest</Data><Data Name="IpAddress">198.51.100.99</Data></EventData></Event>
+<log><entry level="error"><timestamp>2026-09-15T18:00:02Z</timestamp><service>Database</service><message>Connection timeout to master</message></entry></log>
+<audit_record><user>admin</user><action>DELETE_TABLE</action><target>customer_records</target><ip>10.0.0.15</ip></audit_record>
+<security_alert severity="HIGH"><id>SEC-1092</id><type>BruteForce</type><source_ip>192.0.2.45</source_ip><attempts>50</attempts></security_alert>
+<syslog_xml><facility>auth</facility><priority>notice</priority><host>firewall01</host><msg>Interface eth0 link down</msg></syslog_xml>
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><EventID>7045</EventID><TimeCreated SystemTime="2026-09-15T18:00:05Z"/><Computer>WKS-102</Computer></System><EventData><Data Name="ServiceName">PCOptimizer</Data><Data Name="ImagePath">C:\ProgramData\opt.exe</Data></EventData></Event>
+<app_log><header><id>9901</id><source>WebFrontend</source></header><body><status>500</status><error>Internal Server Error</error></body></app_log>
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><EventID>4688</EventID><TimeCreated SystemTime="2026-09-15T18:00:07Z"/><Computer>DC02.corp.local</Computer></System><EventData><Data Name="NewProcessName">C:\Windows\System32\cmd.exe</Data></EventData></Event>
+<waf_report><timestamp>2026-09-15T18:00:08Z</timestamp><client>203.0.113.88</client><blocked_path>/wp-admin/setup-config.php</blocked_path></waf_report>

@@ -1,0 +1,4 @@
+CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|start|3|src=10.0.1.15 dst=192.168.1.50 spt=49152 dpt=445 proto=TCP act=allow deviceReceiptTime=2026-09-20T14:00:32Z
+CEF:0|Palo Alto Networks|PAN-OS|10.1|THREAT|vulnerability|5|src=10.0.1.15 dst=192.168.1.50 spt=49152 dpt=445 proto=TCP act=drop deviceReceiptTime=2026-09-20T14:00:46Z threat_name="SMB Remote Code Execution"
+CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|end|2|src=192.168.1.10 dst=8.8.8.8 spt=53000 dpt=53 proto=UDP act=allow deviceReceiptTime=2026-09-20T14:01:00Z bytes_sent=64 bytes_received=128
+CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|deny|4|src=203.0.113.100 dst=10.0.1.5 spt=61200 dpt=22 proto=TCP act=deny deviceReceiptTime=2026-09-20T14:01:15Z

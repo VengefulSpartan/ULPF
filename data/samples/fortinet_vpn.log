@@ -1,0 +1,3 @@
+date=2026-09-20 time=14:00:01 devname="FGT-VPN" type="vpn" action="login" status="success" user="contractor_bob" srcip=198.51.100.22 dstip=10.0.1.15 auth_method="MFA-OTP"
+date=2026-09-20 time=14:00:02 devname="FGT-VPN" type="vpn" action="tunnel-up" tunneltype="ssl-tunnel" user="contractor_bob" assigned_ip=10.0.1.15
+date=2026-09-20 time=14:15:00 devname="FGT-VPN" type="vpn" action="logout" status="success" user="contractor_bob" duration=900 sentbyte=54320 rcvdbyte=184920

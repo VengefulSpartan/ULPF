@@ -1,0 +1,10 @@
+<34>Sep 15 18:00:00 mymachine su: 'su root' failed for lonvick on /dev/pts/8
+<13>Sep 15 18:00:01 firewall01 %ASA-6-302013: Built outbound TCP connection 990123 for outside:198.51.100.5/443 (198.51.100.5/443) to inside:192.168.1.10/52010 (192.168.1.10/52010)
+<13>Sep 15 18:00:02 firewall01 %ASA-4-106023: Deny tcp src outside:198.51.100.99/12345 dst inside:10.0.0.1/80 by access-group "outside_in" [0x0, 0x0]
+<85>Sep 15 18:00:03 webserver01 CRON[1234]: (root) CMD (command -v debian-sa1 > /dev/null && debian-sa1 1 1)
+<38>Sep 15 18:00:04 proxy01 squid[5510]: 192.168.1.50 - - [15/Sep/2026:18:00:04 +0000] "GET http://www.google.com HTTP/1.1" 200 4500
+<34>Sep 15 18:00:05 auth-node sshd[8910]: Failed password for invalid user admin from 198.51.100.44 port 42100 ssh2
+<14>Sep 15 18:00:06 router01 Kernel: [ 1092.410100] eth0: link up, 1000Mbps, full-duplex, lpa 0xC5E1
+<86>Sep 15 18:00:07 switch01 %ETHPORT-5-IF_DOWN_LINK_FAILURE: Interface Ethernet1/1 is down (Link failure)
+<34>Sep 15 18:00:08 login-host sudo: pam_unix(sudo:session): session opened for user root by admin(uid=1000)
+<13>Sep 15 18:00:09 gateway01 iptables: IN=eth0 OUT= MAC=00:11:22:33:44:55 SRC=198.51.100.88 DST=10.0.0.1 PROTO=TCP SPT=4444 DPT=80 SYN
