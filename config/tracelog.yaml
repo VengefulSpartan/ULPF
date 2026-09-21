@@ -1,0 +1,25 @@
+# TRACELOG connector configuration (active defaults).
+# Every connector type is documented in config/tracelog.full-example.yaml.
+# ${VAR} is read from the environment, so secrets never live in this file.
+tracelog:
+  inputs:
+    syslog:
+      # Point devices at this host. 5514 avoids needing root; docker-compose maps 514 -> 5514.
+      - {name: syslog-udp, protocol: udp, host: 0.0.0.0, port: 5514}
+      - {name: syslog-tcp, protocol: tcp, host: 0.0.0.0, port: 5514}
+    http:
+      enabled: true          # Splunk HEC (/services/collector/*), OTLP (/v1/logs), /api/ingest/stream
+      tokens: []             # add tokens (e.g. ["${TRACELOG_HEC_TOKEN}"]) to require authentication
+
+  # Optional: name devices instead of auto-registering them by sender address.
+  sources: []
+
+  outputs:
+    # Normalised OCSF events, one NDJSON file per day. Works air-gapped with no other software.
+    - name: ocsf-archive
+      type: file
+      path: data/export/ocsf-%Y-%m-%d.ndjson
+
+  pipeline:
+    batch_size: 500
+    flush_seconds: 0.5

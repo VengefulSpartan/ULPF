@@ -102,6 +102,8 @@ def parse(env: Envelope) -> Optional[dict]:
         threat = f.get("threat_id") or ""
         m = _THREAT_ID.match(threat)
         title, tid = (m.group(1).strip(), m.group(2)) if m else (threat, None)
+        if (f.get("subtype") or "").lower() == "url" and f.get("url_or_filename"):
+            title = f"URL filtering ({f.get('category') or 'uncategorised'}): {f['url_or_filename']}"
         return event(
             VENDOR, PRODUCT, DETECTION_FINDING, vendor_fields=vendor_fields,
             src_ip=clean(f.get("src")), dst_ip=clean(f.get("dst")),

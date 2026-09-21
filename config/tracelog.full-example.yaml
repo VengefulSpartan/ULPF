@@ -1,0 +1,130 @@
+# TRACELOG connector reference: every input and output type with its settings.
+# Copy the blocks you need into config/tracelog.yaml (or point TRACELOG_CONFIG at your own file).
+# ${VAR} and ${VAR:-default} are read from the environment.
+tracelog:
+  inputs:
+    syslog:
+      - {name: syslog-udp, protocol: udp, host: 0.0.0.0, port: 5514}
+      - {name: syslog-tcp, protocol: tcp, host: 0.0.0.0, port: 5514}        # RFC 6587: octet-counting or LF framing
+      - name: syslog-tls                                                     # RFC 5425
+        protocol: tls
+        port: 6514
+        certfile: /etc/tracelog/tls/server.crt
+        keyfile: /etc/tracelog/tls/server.key
+        client_ca: /etc/tracelog/tls/devices-ca.crt                           # optional: require device certificates
+    http:
+      enabled: true
+      tokens: ["${TRACELOG_HEC_TOKEN}"]     # "Authorization: Splunk <token>" or "Bearer <token>"
+    files:                                    # tail files an existing rsyslog / syslog-ng server already writes
+      - name: rsyslog-remote
+        paths: ["/var/log/remote/*/*.log"]
+        start_at: end                         # or "beginning" to import history
+    kafka:                                    # needs the optional kafka-python-ng package
+      - name: firewall-topic
+        bootstrap_servers: ["kafka-1:9092"]
+        topics: ["perimeter-raw"]
+        group_id: tracelog
+
+  sources:                                    # optional friendly names; unmatched senders are auto-registered
+    - {name: HQ-PaloAlto-01, match_ip: 10.0.0.1, category: firewall}
+    - {name: DC-FortiGate, match_hostname: FGT-DC-01, category: firewall}
+
+  outputs:
+    # Every output accepts: enabled, batch_size, flush_seconds, max_retries, retry_backoff_seconds,
+    # timeout_seconds, include_raw, filter {classes: [4001, 3002, 2004], min_severity_id, sources},
+    # and TLS settings verify_tls / ca_file / client_cert / client_key where relevant.
+    - name: splunk
+      type: splunk_hec
+      url: https://splunk.example.internal:8088
+      token: ${SPLUNK_HEC_TOKEN}
+      index: perimeter
+      sourcetype: ocsf:tracelog
+
+    - name: opensearch                        # also: elasticsearch, wazuh_indexer
+      type: opensearch
+      url: https://opensearch.example.internal:9200
+      index: tracelog-ocsf-%Y.%m.%d
+      username: tracelog
+      password: ${OPENSEARCH_PASSWORD}
+      ca_file: /etc/tracelog/tls/opensearch-ca.crt
+
+    - name: qradar                            # IBM QRadar: LEEF over syslog
+      type: syslog
+      host: qradar.example.internal
+      port: 514
+      protocol: tcp
+      format: leef
+
+    - name: arcsight                          # ArcSight / LogRhythm / Securonix: CEF over syslog
+      type: syslog
+      host: siem.example.internal
+      port: 6514
+      protocol: tls
+      format: cef
+      ca_file: /etc/tracelog/tls/siem-ca.crt
+
+    - name: wazuh-manager                     # OCSF JSON over syslog
+      type: syslog
+      host: wazuh.example.internal
+      port: 514
+      protocol: udp
+      format: json
+
+    - name: graylog
+      type: gelf
+      host: graylog.example.internal
+      port: 12201
+      protocol: tcp                           # udp (chunked, compressed), tcp, or http with url:
+
+    - name: loki
+      type: loki
+      url: http://loki.example.internal:3100
+      tenant: perimeter                       # optional X-Scope-OrgID
+
+    - name: otel-collector                    # OTLP/HTTP JSON to a Collector or an OTLP-native backend
+      type: otlp_http
+      url: http://otel-collector.example.internal:4318
+      headers: {}                             # e.g. {api-key: "${NEW_RELIC_LICENSE_KEY}"}
+
+    - name: sentinel                          # Microsoft Sentinel via the Logs Ingestion API
+      type: sentinel
+      tenant_id: ${AZURE_TENANT_ID}
+      client_id: ${AZURE_CLIENT_ID}
+      client_secret: ${AZURE_CLIENT_SECRET}
+      dce_endpoint: https://my-dce.centralindia-1.ingest.monitor.azure.com
+      dcr_immutable_id: dcr-00000000000000000000000000000000
+      stream_name: Custom-TracelogOCSF_CL
+
+    - name: datadog
+      type: datadog
+      api_key: ${DD_API_KEY}
+      # url: https://http-intake.logs.datadoghq.eu/api/v2/logs   # other Datadog sites
+
+    - name: newrelic
+      type: newrelic
+      api_key: ${NEW_RELIC_LICENSE_KEY}
+
+    - name: soar-webhook
+      type: webhook
+      url: https://soar.example.internal/hooks/tracelog
+      bearer_token: ${SOAR_TOKEN}
+      format: json_array                      # json_array | ndjson | single
+      filter: {classes: [2004], min_severity_id: 4}
+
+    - name: kafka-ocsf                        # needs kafka-python-ng
+      type: kafka
+      bootstrap_servers: ["kafka-1:9092"]
+      topic: ocsf-events
+
+    - name: ocsf-archive
+      type: file
+      path: data/export/ocsf-%Y-%m-%d.ndjson
+
+    - name: data-lake                         # needs pyarrow
+      type: parquet
+      root: data/lake
+
+  pipeline:
+    batch_size: 500
+    flush_seconds: 0.5
+    queue_size: 200000

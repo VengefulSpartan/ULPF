@@ -154,7 +154,21 @@ class Database:
                 tampered_at TEXT NOT NULL
             );
             """)
-            
+
+            # Migration: chain-of-custody metadata for streamed logs. raw_encoding
+            # records how raw bytes were decoded, so raw_text.encode(raw_encoding)
+            # always gives back the exact bytes received.
+            existing = {row[1] for row in cursor.execute("PRAGMA table_info(raw_logs)")}
+            for column, ddl in (
+                ("raw_encoding", "TEXT NOT NULL DEFAULT 'utf-8'"),
+                ("transport", "TEXT"),
+                ("input_name", "TEXT"),
+                ("peer_ip", "TEXT"),
+                ("received_at", "TEXT"),
+            ):
+                if column not in existing:
+                    cursor.execute(f"ALTER TABLE raw_logs ADD COLUMN {column} {ddl}")
+
             conn.commit()
 
 db = Database()
