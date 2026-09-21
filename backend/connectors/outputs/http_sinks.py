@@ -77,7 +77,11 @@ class SplunkHecSink(HttpSink):
 
 
 class ElasticsearchSink(HttpSink):
-    """Elasticsearch / OpenSearch / Wazuh indexer `_bulk` API. `index` may contain strftime codes."""
+    """Elasticsearch / OpenSearch / Wazuh indexer `_bulk` API. `index` may contain strftime codes.
+
+    Each document's _id is the OCSF event uid and the op is `create`, so sending an event twice (a
+    re-sent dead letter, a batch repeated after a crash) is refused with 409 and counted as delivered:
+    re-sends never create duplicates in the index."""
     type_name = "elasticsearch"
 
     def validate_settings(self):
@@ -92,7 +96,8 @@ class ElasticsearchSink(HttpSink):
         lines = []
         for e in batch:
             dt = datetime.fromtimestamp((e.get("time") or 0) / 1000.0, tz=timezone.utc)
-            lines.append(json.dumps({"create": {"_index": dt.strftime(pattern)}}))
+            uid = (e.get("metadata") or {}).get("uid")
+            lines.append(json.dumps({"create": {"_index": dt.strftime(pattern), **({"_id": uid} if uid else {})}}))
             lines.append(json.dumps({"@timestamp": ts_iso(e), **e}, default=str))
         headers = {"Content-Type": "application/x-ndjson"}
         if s.get("api_key"):
@@ -105,6 +110,8 @@ class ElasticsearchSink(HttpSink):
         rejected, retry = [], False
         for e, item in zip(batch, result.get("items", [])):
             status = next(iter(item.values())).get("status", 200)
+            if status == 409:  # already indexed under this uid: delivered earlier
+                continue
             if status == 429 or status >= 500:
                 retry = True
             elif status >= 400:

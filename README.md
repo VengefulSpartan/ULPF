@@ -632,6 +632,9 @@ All endpoints return standard JSON responses and are fully documented interactiv
 | `GET` | `/api/export/csv` | Exports flattened CSV file | `limit` (default: 1000) | Streamed CSV attachment |
 | `GET` | `/api/connectors` | Live status of every input and output, supported sources and destinations | None | `{"pipeline", "inputs", "outputs", ...}` |
 | `POST` | `/api/connectors/outputs/{name}/test` | Sends one OCSF event to an output synchronously | None | `{"ok": true, "detail": ...}` |
+| `GET` | `/api/connectors/dead-letters` | Undelivered events per output: count by kind, reasons, devices | None | `List[summary]` |
+| `GET` | `/api/connectors/dead-letters/{output}` | Latest dead-letter entries with full OCSF events | `limit` | `{"summary", "entries"}` |
+| `POST` | `/api/connectors/dead-letters/{output}/replay` | Re-sends dead letters (optionally through another output) | `to`, `kinds`, `limit`, `wait` | `{"state", "delivered", "remaining", ...}` |
 | `POST` | `/api/connectors/flush` | Waits until everything received is stored and handed to the outputs | `timeout` | `{"drained": true, ...}` |
 | `POST` | `/services/collector/event` | Splunk HEC receiver (Fluent Bit, Vector, Cribl, OTel `splunk_hec`) | HEC JSON events | `{"text": "Success", "code": 0}` |
 | `POST` | `/services/collector/raw` | Splunk HEC raw receiver, one log per line | Raw lines, `host`, `sourcetype` | `{"text": "Success", "code": 0}` |
@@ -681,7 +684,7 @@ To execute the comprehensive test suite:
 ```powershell
 python -m pytest -q
 ```
-**Expected Output**: every test passes (189 at the time of writing), including the connector tests that run real syslog sockets and mock Splunk, Elasticsearch, Loki, OTLP, Sentinel, Datadog, GELF and syslog/CEF/LEEF receivers.
+**Expected Output**: every test passes (203 at the time of writing), including the connector tests that run real syslog sockets and mock Splunk, Elasticsearch, Loki, OTLP, Sentinel, Datadog, GELF and syslog/CEF/LEEF receivers.
 
 ### 6. Docker Deployment
 ```bash
@@ -734,7 +737,9 @@ TRACELOG runs as the layer between the devices that produce perimeter logs and t
 | `webhook` | SOAR platforms and any HTTPS JSON endpoint |
 | `kafka`, `file`, `parquet` | Data platforms, data lakes, Amazon Security Lake custom sources, air-gapped transfer |
 
-**Delivery guarantees.** A burst larger than the ingest queue is spooled to disk and replayed, never dropped. A line that no pack recognises is still archived, chained and forwarded as an OCSF Base Event. Each output has its own queue, retries with exponential backoff, a dead-letter file (`data/dead_letter/<output>.ndjson`) and optional filters by OCSF class, severity and source, so a slow or broken SIEM never holds up ingestion or the other outputs.
+**Delivery guarantees.** A burst larger than the ingest queue is spooled to disk and replayed, never dropped. A line that no pack recognises is still archived, chained and forwarded as an OCSF Base Event. Each output has its own queue, retries with exponential backoff and optional filters by OCSF class, severity and source, so a slow or broken SIEM never holds up ingestion or the other outputs.
+
+**Dead letters are re-sent, not just parked.** An event an output cannot deliver goes to `data/dead_letter/<output>.ndjson` with its reason, source device, attempt count and kind (`undeliverable`, `queue_full` or `rejected`). Undeliverable and queue-full events are re-sent automatically as soon as the destination answers again (with backoff while it stays down); rejected ones wait until the cause, such as a wrong token or index mapping, is fixed and someone presses **Re-send dead letters** on the Connectors page or calls `POST /api/connectors/dead-letters/<output>/replay`. A replay can go through a different output (for example to the NDJSON archive), resumes from its saved position after a crash so at most one batch is repeated, and never creates duplicates in Elasticsearch, OpenSearch or Wazuh because the event uid is the document id. Details: [docs/CONNECTORS.md](docs/CONNECTORS.md#dead-letters-events-a-destination-did-not-take-and-re-sending-them).
 
 **Live demo with a real sensor.** `docker compose -f docker-compose.devices.yml up` starts a Suricata sensor, a target web server and a traffic generator. TRACELOG tails `suricata-logs/eve.json` through the `suricata-eve` file input in the default configuration, so its alerts appear in the dashboard as Detection Findings as they happen.
 

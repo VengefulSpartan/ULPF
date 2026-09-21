@@ -22,6 +22,7 @@ from backend.connectors.config import TracelogConfig, load_config
 from backend.connectors.inputs.pollers import FileTailInput, KafkaConsumerInput
 from backend.connectors.inputs.syslog import SyslogListener
 from backend.connectors.outputs import COMPATIBILITY, Sink, build_sink
+from backend.connectors.outputs.deadletter import KINDS, DeadLetterStore
 from backend.services.ingestion.stream import InboundRecord, SourceResolver, StoredEvent, StreamIngestor, utcnow_iso
 from backend.services.vendors import SUPPORTED_SOURCES
 
@@ -36,6 +37,7 @@ class ConnectorEngine:
         self.syslog: List[SyslogListener] = []
         self.pollers: List[Any] = []
         self.http_stats: Dict[str, Dict[str, Any]] = {}
+        self._orphan_stores: Dict[str, DeadLetterStore] = {}
         self._queue: "queue.Queue[InboundRecord]" = queue.Queue(maxsize=200000)
         self._worker: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -54,6 +56,7 @@ class ConnectorEngine:
         self._queue = queue.Queue(maxsize=self.config.pipeline.queue_size)
         self.ingestor = StreamIngestor(SourceResolver([s.model_dump() for s in self.config.sources]))
         self.sinks, self.sink_errors = [], []
+        self._orphan_stores = {}
         for out in self.config.outputs:
             if not out.enabled:
                 continue
@@ -197,7 +200,7 @@ class ConnectorEngine:
         for ev in stored:
             for sink in self.sinks:
                 if sink.accepts(ev.ocsf, ev.source_name):
-                    sink.put(ev.ocsf)
+                    sink.put(ev.ocsf, ev.source_name)
 
     def flush(self, timeout: float = 10.0) -> bool:
         """Wait until everything received so far is ingested and handed to every sink."""
@@ -229,6 +232,48 @@ class ConnectorEngine:
             "supported_sources": SUPPORTED_SOURCES,
             "output_compatibility": COMPATIBILITY,
         }
+
+    # ---- dead letters --------------------------------------------------------------------
+    def dead_letter_stores(self) -> Dict[str, DeadLetterStore]:
+        """Every output's store, plus files left by outputs that are no longer configured."""
+        stores = {s.cfg.name: s.store for s in self.sinks}
+        folder = Path(self.config.data_dir) / "dead_letter"
+        if folder.is_dir():
+            names = {p.name[: -len(".ndjson")] for p in folder.glob("*.ndjson")}
+            names |= {p.name[: -len(".replaying.ndjson")] for p in folder.glob("*.replaying.ndjson")}
+            for name in sorted(names):
+                if name.endswith(".replaying") or name in stores:
+                    continue
+                if name not in self._orphan_stores:
+                    self._orphan_stores[name] = DeadLetterStore(folder / f"{name}.ndjson")
+                stores[name] = self._orphan_stores[name]
+        return stores
+
+    def dead_letters(self) -> List[Dict[str, Any]]:
+        sinks = {s.cfg.name: s for s in self.sinks}
+        out = []
+        for name, store in self.dead_letter_stores().items():
+            sink = sinks.get(name)
+            out.append({**store.summary(), "configured": sink is not None,
+                        "type": sink.type_name if sink else None,
+                        "auto_replay": bool(sink and sink.cfg.auto_replay),
+                        "last_replay": sink.last_replay if sink else None})
+        return out
+
+    def replay_dead_letters(self, name: str, to: Optional[str] = None, kinds: Optional[List[str]] = None,
+                            limit: Optional[int] = None, wait: float = 30.0) -> Dict[str, Any]:
+        """Re-send `name`'s dead letters through output `to` (default: the same output)."""
+        stores = self.dead_letter_stores()
+        if name not in stores:
+            raise LookupError(f"no dead letters for '{name}'")
+        sinks = {s.cfg.name: s for s in self.sinks}
+        via = sinks.get(to or name)
+        if via is None:
+            raise LookupError(f"output '{to or name}' is not running; pick a configured output with to=")
+        bad = [k for k in (kinds or []) if k not in KINDS]
+        if bad:
+            raise ValueError(f"unknown kind(s) {bad}; use {', '.join(KINDS)}")
+        return via.request_replay(stores[name], tuple(kinds or KINDS), limit, wait)
 
     def http_hit(self, name: str, n: int, size: int) -> None:
         s = self.http_stats.setdefault(name, {"type": "http", "received": 0, "bytes": 0, "last_received_at": None,

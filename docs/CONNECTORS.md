@@ -336,7 +336,7 @@ output {
 | `kafka` | Kafka-based data pipelines and lakes |
 | `file / parquet` | Data lakes (DuckDB, Spark, Athena, Trino), removable-media hand-off |
 
-Every output accepts `enabled`, `batch_size`, `flush_seconds`, `max_retries`, `retry_backoff_seconds`, `timeout_seconds`, `include_raw` and a `filter` (`classes`, `min_severity_id`, `sources`). Failed batches are retried with backoff and then written to `data/dead_letter/<output>.ndjson`, so nothing is silently lost. Add these blocks under `outputs:` in `config/tracelog.yaml`.
+Every output accepts `enabled`, `batch_size`, `flush_seconds`, `max_retries`, `retry_backoff_seconds`, `timeout_seconds`, `include_raw` and a `filter` (`classes`, `min_severity_id`, `sources`). Failed batches are retried with backoff and then written to `data/dead_letter/<output>.ndjson`, so nothing is silently lost; see [Dead letters](#dead-letters-events-a-destination-did-not-take-and-re-sending-them) for re-sending them. Add these blocks under `outputs:` in `config/tracelog.yaml`.
 
 ### Splunk Enterprise / Splunk Cloud / Splunk ES
 
@@ -559,6 +559,37 @@ Output type: `file / parquet / kafka`.
   type: parquet
   root: data/lake
 ```
+
+## Dead letters: events a destination did not take, and re-sending them
+
+When an output cannot deliver an event it writes it to `data/dead_letter/<output>.ndjson` instead of dropping it. Each line records the full OCSF event, the output, the source device, how many delivery attempts were made, the destination's answer, and a kind:
+
+| Kind | Meaning | Re-send |
+|---|---|---|
+| `undeliverable` | every retry failed: destination down, timeout, HTTP 408/429/5xx | automatic once the destination answers again, or on request |
+| `queue_full` | the output's queue overflowed during a burst | automatic, or on request |
+| `rejected` | the destination refused it: HTTP 4xx (bad token, index mapping, payload too large) | only on request, after fixing the cause |
+
+**Automatic re-send.** With `auto_replay: true` (the default) each output retries its `undeliverable` and `queue_full` dead letters by itself: straight away when a live batch succeeds (the destination is back), otherwise every `auto_replay_interval_seconds` (30 s), doubling up to `auto_replay_max_interval_seconds` (15 min) while it stays down. Each pass sends at most `replay_batches_per_pass` batches, so live traffic keeps flowing while a backlog drains.
+
+**Re-send on request.** On the dashboard's Connectors page, an output with waiting dead letters shows the count by kind, the main reasons, the devices affected and a **Re-send dead letters** button, with a choice of kinds, the output to send through and a maximum. The same through the API:
+
+```bash
+# what is waiting, per output (including outputs since removed from the config)
+curl -s http://TRACELOG_IP:8000/api/connectors/dead-letters
+# the latest entries for one output, with reasons and full events
+curl -s 'http://TRACELOG_IP:8000/api/connectors/dead-letters/splunk?limit=20'
+# re-send everything waiting for splunk
+curl -s -X POST http://TRACELOG_IP:8000/api/connectors/dead-letters/splunk/replay
+# only rejected events, after fixing the HEC token; at most 5000
+curl -s -X POST 'http://TRACELOG_IP:8000/api/connectors/dead-letters/splunk/replay?kinds=rejected&limit=5000'
+# send a removed output's leftovers to the NDJSON archive instead
+curl -s -X POST 'http://TRACELOG_IP:8000/api/connectors/dead-letters/old-qradar/replay?to=ocsf-archive'
+```
+
+The reply gives `state` (`done`, `stopped` when the destination still fails, `limit_reached`, or `running` if it takes longer than `wait` seconds), `delivered`, `refused_again`, `remaining` and the error if any.
+
+**What a re-send guarantees.** The replay runs in the output's own thread between live batches, so a destination is never written to from two threads. It claims the waiting file by renaming it (new dead letters start a fresh file), sends one batch at a time with no retries, and after each accepted batch saves its position in `<output>.replaying.offset`. If the destination fails, the replay stops and everything not yet delivered stays exactly where it was for the next attempt. If TRACELOG stops or crashes mid-replay, the next replay resumes from the saved position, so at most one batch is sent twice. Elasticsearch, OpenSearch and the Wazuh indexer use the OCSF event uid as the document `_id`, so even that batch creates no duplicates; for other destinations `metadata.uid` identifies a repeated event. Entries are removed only after the destination accepted them.
 
 ## Checking the connection
 

@@ -257,13 +257,15 @@ def test_elasticsearch_bulk_format_and_partial_rejection(mock_http, ocsf_events,
     mock_http.responses["/_bulk"] = bulk
     cfg = out("os", "opensearch", url=mock_http.url, index="tracelog-%Y.%m", username="u", password="p")
     sink = build_sink(cfg, data_dir=str(tmp_path))
-    sink._deliver(ocsf_events)
+    sink._deliver([(e, "lab-fw") for e in ocsf_events])
     lines = mock_http.bodies("/_bulk")[0].decode().splitlines()
     assert json.loads(lines[0])["create"]["_index"].startswith("tracelog-20")
+    assert json.loads(lines[0])["create"]["_id"] == ocsf_events[0]["metadata"]["uid"]  # idempotent re-sends
     assert "@timestamp" in json.loads(lines[1])
     assert mock_http.requests[0]["headers"]["Authorization"].startswith("Basic ")
     assert sink.metrics["dead_lettered"] == 1 and sink.metrics["sent"] == len(ocsf_events) - 1
-    assert (tmp_path / "dead_letter" / "os.ndjson").read_text().count("\n") == 1
+    dead = [json.loads(l) for l in (tmp_path / "dead_letter" / "os.ndjson").read_text().splitlines()]
+    assert len(dead) == 1 and dead[0]["kind"] == "rejected" and dead[0]["source"] == "lab-fw"
 
 
 def test_loki_push_uses_low_cardinality_labels(mock_http, ocsf_events, tmp_path):
@@ -370,9 +372,11 @@ def test_unreachable_output_retries_then_dead_letters(ocsf_events, tmp_path):
     cfg = out("down", "splunk_hec", url=f"http://127.0.0.1:{free_port()}", token="t")
     cfg.max_retries = 2
     sink = build_sink(cfg, data_dir=str(tmp_path))
-    sink._deliver(ocsf_events)
+    sink._deliver([(e, "") for e in ocsf_events])
     assert sink.metrics["retries"] == 2 and sink.metrics["failed"] == len(ocsf_events)
-    assert (tmp_path / "dead_letter" / "down.ndjson").read_text().count("\n") == len(ocsf_events)
+    dead = [json.loads(l) for l in (tmp_path / "dead_letter" / "down.ndjson").read_text().splitlines()]
+    assert len(dead) == len(ocsf_events)
+    assert all(d["kind"] == "undeliverable" and d["attempts"] == 3 and d["output"] == "down" for d in dead)
 
 
 def test_output_filter_by_class_and_severity(ocsf_events, tmp_path):

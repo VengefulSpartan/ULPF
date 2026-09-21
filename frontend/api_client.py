@@ -259,3 +259,40 @@ class APIClient:
                 {"ok": False, "detail": r.text[:300]}
         except Exception as exc:
             return {"ok": False, "detail": f"API server not reachable: {exc}"}
+
+    @classmethod
+    def get_dead_letters(cls) -> Optional[List[Dict[str, Any]]]:
+        try:
+            r = requests.get(f"{BASE_URL}/connectors/dead-letters", timeout=5.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def dead_letter_entries(cls, name: str, limit: int = 10) -> Dict[str, Any]:
+        try:
+            r = requests.get(f"{BASE_URL}/connectors/dead-letters/{name}", params={"limit": limit}, timeout=5.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        return {"summary": {}, "entries": []}
+
+    @classmethod
+    def replay_dead_letters(cls, name: str, to: Optional[str] = None, kinds: Optional[List[str]] = None,
+                            limit: Optional[int] = None) -> Dict[str, Any]:
+        params: Dict[str, Any] = {"wait": 60}
+        if to and to != name:
+            params["to"] = to
+        if kinds:
+            params["kinds"] = ",".join(kinds)
+        if limit:
+            params["limit"] = limit
+        try:
+            r = requests.post(f"{BASE_URL}/connectors/dead-letters/{name}/replay", params=params, timeout=70.0)
+            body = r.json()
+            return body if r.status_code == 200 else {"state": "error", "error": body.get("detail", r.text[:300])}
+        except Exception as exc:
+            return {"state": "error", "error": f"API server not reachable: {exc}"}

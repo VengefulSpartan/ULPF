@@ -86,9 +86,12 @@ def _live_status():
         with st.container(border=True):
             left, mid, right = st.columns([3, 4, 1.4])
             alive = o.get("alive")
+            failing = alive and o.get("last_error_at") and (o.get("last_error_at") > (o.get("last_success_at") or ""))
+            state, color = (("○ not running", "#B91C1C") if not alive else
+                            ("● failing: events go to dead letters", "#C2410C") if failing else
+                            ("● delivering", "#2E7D32"))
             left.markdown(f"**{o['name']}** &nbsp; `{o['type']}`  \n"
-                          f"<span style='color:{'#2E7D32' if alive else '#B91C1C'}'>"
-                          f"{'● delivering' if alive else '○ not running'}</span>", unsafe_allow_html=True)
+                          f"<span style='color:{color}'>{state}</span>", unsafe_allow_html=True)
             if o.get("error"):
                 mid.error(o["error"])
             else:
@@ -104,6 +107,69 @@ def _live_status():
                 (st.success if res.get("ok") else st.error)(f"{o['name']}: {res.get('detail')}")
                 if res.get("ocsf_violations"):
                     st.warning("OCSF check: " + "; ".join(res["ocsf_violations"]))
+            dl = o.get("dead_letters") or {}
+            if dl.get("waiting"):
+                _dead_letter_panel(o["name"], dl, [x["name"] for x in outputs if x.get("alive")])
+
+    orphans = [d for d in (APIClient.get_dead_letters() or []) if not d.get("configured") and d.get("waiting")]
+    if orphans:
+        st.markdown("##### Dead letters from outputs no longer in the configuration")
+        for d in orphans:
+            with st.container(border=True):
+                st.markdown(f"**{d['output']}** · {d['waiting']:,} events waiting · oldest {d.get('oldest') or '-'}")
+                _dead_letter_panel(d["output"], {"waiting": d["waiting"], "by_kind": d["by_kind"]},
+                                   [x["name"] for x in outputs if x.get("alive")], orphan=True)
+
+
+_KIND_HELP = {
+    "undeliverable": "every retry failed (destination down, timeout, 5xx/429). Safe to re-send as is.",
+    "queue_full": "the output's queue overflowed during a burst. Safe to re-send as is.",
+    "rejected": "the destination refused them (4xx: token, mapping, size). Fix the cause, then re-send.",
+}
+
+
+def _dead_letter_panel(name: str, dl: dict, running_outputs: list, orphan: bool = False):
+    kinds = dl.get("by_kind") or {}
+    parts = [f"{k.replace('_', ' ')} {n:,}" for k, n in kinds.items() if n]
+    auto = "" if orphan else (" · re-sent automatically when the destination answers"
+                              if dl.get("auto_replay") else " · automatic re-send off")
+    st.warning(f"{dl['waiting']:,} dead letters waiting ({', '.join(parts)}){auto}")
+    last = dl.get("last_replay")
+    if last:
+        st.caption(f"Last re-send ({last.get('trigger')}): {last.get('state')}, {last.get('delivered', 0):,} delivered"
+                   + (f", error: {last['error']}" if last.get("error") else ""))
+    with st.expander(f"Inspect and re-send · {name}"):
+        detail = APIClient.dead_letter_entries(name, limit=8)
+        summ = detail.get("summary") or {}
+        for k, n in kinds.items():
+            if n:
+                st.markdown(f"- **{k.replace('_', ' ')}** ({n:,}): {_KIND_HELP[k]}")
+        if summ.get("top_reasons"):
+            st.markdown("**Why:** " + " · ".join(f"{r['reason']} ({r['count']})" for r in summ["top_reasons"][:3]))
+        if summ.get("by_source"):
+            st.markdown("**From:** " + ", ".join(f"{s} ({n})" for s, n in list(summ["by_source"].items())[:5]))
+        rows = [{"at": e.get("at", "")[:19], "kind": e.get("kind"), "attempts": e.get("attempts"),
+                 "class": (e.get("event") or {}).get("class_name"), "source": e.get("source"),
+                 "reason": (e.get("reason") or "")[:90]} for e in detail.get("entries", [])]
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        c1, c2, c3 = st.columns([2, 2, 1])
+        pick = c1.multiselect("Kinds to re-send", [k for k, n in kinds.items() if n],
+                              default=[k for k, n in kinds.items() if n], key=f"dl_kinds_{name}")
+        options = running_outputs if orphan else [name] + [x for x in running_outputs if x != name]
+        via = c2.selectbox("Send through output", options, key=f"dl_via_{name}") if options else None
+        limit = c3.number_input("Max events (0 = all)", min_value=0, value=0, step=100, key=f"dl_limit_{name}")
+        if st.button(f"Re-send dead letters", key=f"dl_go_{name}", type="primary", disabled=not (pick and via)):
+            res = APIClient.replay_dead_letters(name, to=via, kinds=pick, limit=int(limit) or None)
+            state = res.get("state")
+            msg = (f"{state}: {res.get('delivered', 0):,} delivered, {res.get('refused_again', 0):,} refused again, "
+                   f"{res.get('remaining', '?')} still waiting")
+            if state == "done":
+                st.success(msg)
+            elif state in ("limit_reached", "running", "queued"):
+                st.info(msg)
+            else:
+                st.error(msg + (f" · {res.get('error')}" if res.get("error") else ""))
 
 
 def _connect_source():
