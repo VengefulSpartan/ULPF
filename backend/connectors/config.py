@@ -127,6 +127,12 @@ class Output(BaseModel):
     timeout_seconds: float = 10.0
     include_raw: bool = True
     filter: OutputFilter = Field(default_factory=OutputFilter)
+    # Dead letters: re-send undeliverable / queue_full events on their own once the destination answers
+    # again (never "rejected" ones, which need their cause fixed first).
+    auto_replay: bool = True
+    auto_replay_interval_seconds: float = 30.0      # first retry delay, doubled after each failed attempt
+    auto_replay_max_interval_seconds: float = 900.0
+    replay_batches_per_pass: int = 10               # live traffic gets a turn between passes
     settings: Dict[str, Any] = Field(default_factory=dict)
 
 

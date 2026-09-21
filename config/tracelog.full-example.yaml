@@ -33,6 +33,10 @@ tracelog:
     # Every output accepts: enabled, batch_size, flush_seconds, max_retries, retry_backoff_seconds,
     # timeout_seconds, include_raw, filter {classes: [4001, 3002, 2004], min_severity_id, sources},
     # and TLS settings verify_tls / ca_file / client_cert / client_key where relevant.
+    # Undelivered events go to data/dead_letter/<name>.ndjson and are re-sent automatically once the
+    # destination answers again (auto_replay: true, auto_replay_interval_seconds: 30,
+    # auto_replay_max_interval_seconds: 900, replay_batches_per_pass: 10), or on request from the
+    # dashboard / POST /api/connectors/dead-letters/<name>/replay. See docs/CONNECTORS.md.
     - name: splunk
       type: splunk_hec
       url: https://splunk.example.internal:8088

@@ -1,8 +1,9 @@
 import json
 import time
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from backend.connectors.engine import engine
 from backend.services.normalization.ocsf_export import to_ocsf, validate
@@ -50,3 +51,43 @@ def test_output(name: str):
 def flush(timeout: float = 10.0):
     """Wait until everything received has been stored and handed to the outputs (useful for demos and tests)."""
     return {"drained": engine.flush(timeout=timeout), "status": engine.status()["pipeline"]}
+
+
+# ---- dead letters ---------------------------------------------------------------------------
+@router.get("/dead-letters")
+def list_dead_letters():
+    """Every output's undelivered events: how many, of which kind, why, from which devices."""
+    return engine.dead_letters()
+
+
+@router.get("/dead-letters/{name}")
+def dead_letter_entries(name: str, limit: int = Query(20, ge=1, le=500)):
+    """The most recent dead-letter entries for one output, with the full OCSF event and the reason."""
+    stores = engine.dead_letter_stores()
+    if name not in stores:
+        raise HTTPException(status_code=404, detail=f"no dead letters for '{name}'")
+    return {"summary": stores[name].summary(), "entries": stores[name].latest(limit)}
+
+
+@router.post("/dead-letters/{name}/replay")
+def replay_dead_letters(name: str,
+                        to: Optional[str] = Query(None, description="send through this output instead"),
+                        kinds: Optional[str] = Query(None, description="comma-separated: undeliverable,"
+                                                                        "queue_full,rejected (default: all)"),
+                        limit: Optional[int] = Query(None, ge=1, description="stop after this many events"),
+                        wait: float = Query(30.0, ge=0, le=300, description="seconds to wait for the result")):
+    """
+    Re-send dead letters. Runs in the delivering output's own thread between live batches. Stops at
+    the first batch the destination does not accept and keeps everything not delivered; call again
+    once the cause is fixed. Returns the replay's progress (state: done, stopped, limit_reached, running).
+    """
+    store = engine.dead_letter_stores().get(name)
+    try:
+        kind_list = [k.strip() for k in kinds.split(",") if k.strip()] if kinds else None
+        progress = engine.replay_dead_letters(name, to=to, kinds=kind_list, limit=limit, wait=wait)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    remaining = store.summary()
+    return {**progress, "remaining": remaining["waiting"], "remaining_by_kind": remaining["by_kind"]}
