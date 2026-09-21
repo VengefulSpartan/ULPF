@@ -34,7 +34,8 @@ def test_cross_source_rca_correlation(rca_db, monkeypatch):
     pipe_module.IngestionPipeline.ingest_single_log(vpn_log, "src-vpn", "Fortinet", "FortiGate")
 
     # Step 2: Palo Alto Firewall allowed connection
-    fw_log = 'CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|start|3|src=10.0.1.15 dst=192.168.1.50 spt=49152 dpt=445 proto=TCP act=allow'
+    # Device timestamps are now honoured, so every event in the sequence carries one.
+    fw_log = 'CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|start|3|src=10.0.1.15 dst=192.168.1.50 spt=49152 dpt=445 proto=TCP act=allow deviceReceiptTime=2026-09-20T14:00:15Z'
     pipe_module.IngestionPipeline.ingest_single_log(fw_log, "src-fw", "Palo Alto", "PAN-OS")
 
     # Step 3: Suricata IDS Alert
