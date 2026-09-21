@@ -23,6 +23,8 @@ from backend.connectors.inputs.pollers import FileTailInput, KafkaConsumerInput
 from backend.connectors.inputs.syslog import SyslogListener
 from backend.connectors.outputs import COMPATIBILITY, Sink, build_sink
 from backend.connectors.outputs.deadletter import KINDS, DeadLetterStore
+from backend.services.integrity.delivery_ledger import DeliveryLedger
+from backend.services.normalization.ocsf_export import to_ocsf
 from backend.services.ingestion.stream import InboundRecord, SourceResolver, StoredEvent, StreamIngestor, utcnow_iso
 from backend.services.vendors import SUPPORTED_SOURCES
 
@@ -38,6 +40,8 @@ class ConnectorEngine:
         self.pollers: List[Any] = []
         self.http_stats: Dict[str, Dict[str, Any]] = {}
         self._orphan_stores: Dict[str, DeadLetterStore] = {}
+        self.recovery: Dict[str, Any] = {"state": "idle", "requeued": 0, "filtered": 0, "outputs": {}}
+        self._source_names: Dict[str, str] = {}
         self._queue: "queue.Queue[InboundRecord]" = queue.Queue(maxsize=200000)
         self._worker: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -61,7 +65,10 @@ class ConnectorEngine:
             if not out.enabled:
                 continue
             try:
-                self.sinks.append(build_sink(out, self.config.data_dir))
+                sink = build_sink(out, self.config.data_dir)
+                sink.ledger = DeliveryLedger
+                DeliveryLedger.register_output(sink.cfg.name, sink.type_name, sink.describe_target())
+                self.sinks.append(sink)
             except Exception as exc:  # a bad output must not stop ingestion
                 self.sink_errors.append({"name": out.name, "type": out.type, "error": str(exc)})
                 logger.error("output %s not started: %s", out.name, exc)
@@ -80,6 +87,7 @@ class ConnectorEngine:
     async def start(self, config: Optional[TracelogConfig] = None) -> None:
         self.configure(config)
         self.ensure_worker()
+        self.start_recovery()
         for cfg in self.config.inputs.syslog:
             listener = SyslogListener(cfg, self.submit)
             await listener.start()
@@ -196,11 +204,78 @@ class ConnectorEngine:
         self.route(stored)
         self._add_pending(-finally_n)
 
-    def route(self, stored: List[StoredEvent]) -> None:
+    def route(self, stored: List[Any]) -> None:
+        """Hand stored events (objects with .ocsf and .source_name) to every output that accepts them;
+        record the ones an output's filter excludes, so they count as accounted for."""
+        filtered: Dict[str, List[Dict[str, Any]]] = {}
         for ev in stored:
             for sink in self.sinks:
                 if sink.accepts(ev.ocsf, ev.source_name):
                     sink.put(ev.ocsf, ev.source_name)
+                else:
+                    filtered.setdefault(sink.cfg.name, []).append(ev.ocsf)
+        for name, events in filtered.items():
+            try:
+                DeliveryLedger.record(name, "filtered", "filter", events)
+            except Exception:
+                logger.exception("delivery ledger write failed")
+
+    def route_normalized(self, normalized: Dict[str, Any], source_id: Optional[str] = None) -> None:
+        """For events stored by the interactive API / upload path, so they reach the outputs too."""
+        if not self.sinks:
+            return  # not running here (e.g. dashboard in direct mode): recovery sends them at next start
+        from types import SimpleNamespace
+        self.route([SimpleNamespace(ocsf=to_ocsf(normalized), source_name=self._source_name(source_id))])
+
+    def _source_name(self, source_id: Optional[str]) -> str:
+        if not source_id:
+            return ""
+        if source_id not in self._source_names:
+            from backend.services.storage import db as db_module
+            with db_module.db.get_connection() as conn:
+                row = conn.execute("SELECT name FROM sources WHERE id = ?", (source_id,)).fetchone()
+            self._source_names[source_id] = row["name"] if row else ""
+        return self._source_names[source_id]
+
+    # ---- recovery after a restart ---------------------------------------------------------
+    def start_recovery(self) -> None:
+        """Events an output owed but never finished (queued in memory when TRACELOG stopped, or stored
+        while outputs were not running) are sent again from the archive, in the background."""
+        from backend.services.storage import db as db_module
+        with db_module.db.get_connection() as conn:
+            upto = conn.execute("SELECT MAX(sequence_num) FROM normalized_events").fetchone()[0] or 0
+        self.recovery = {"state": "running", "upto_seq": upto, "requeued": 0, "filtered": 0, "outputs": {},
+                         "started_at": utcnow_iso()}
+        threading.Thread(target=self._recover, args=(upto,), name="delivery-recovery", daemon=True).start()
+
+    def _recover(self, upto: int) -> None:
+        try:
+            for sink in list(self.sinks):
+                after, requeued, filtered = 0, 0, []
+                while not self._stop_event.is_set():
+                    rows = [r for r in DeliveryLedger.owed_without_outcome(sink.cfg.name, after) if
+                            r["sequence_num"] <= upto]
+                    if not rows:
+                        break
+                    for r in rows:
+                        after = r["sequence_num"]
+                        ocsf = to_ocsf(json.loads(r["normalized_json"]))
+                        source = r.get("source_name") or ""
+                        if not sink.accepts(ocsf, source):
+                            filtered.append(ocsf)
+                        elif sink.put_blocking(ocsf, source):
+                            requeued += 1
+                    if filtered:
+                        DeliveryLedger.record(sink.cfg.name, "filtered", "filter", filtered)
+                        self.recovery["filtered"] += len(filtered)
+                        filtered = []
+                self.recovery["outputs"][sink.cfg.name] = requeued
+                self.recovery["requeued"] += requeued
+            self.recovery["state"] = "done"
+        except Exception as exc:
+            logger.exception("delivery recovery failed")
+            self.recovery.update(state="failed", error=f"{type(exc).__name__}: {exc}"[:300])
+        self.recovery["finished_at"] = utcnow_iso()
 
     def flush(self, timeout: float = 10.0) -> bool:
         """Wait until everything received so far is ingested and handed to every sink."""
@@ -228,7 +303,9 @@ class ConnectorEngine:
                                "authentication": "token" if self.config.inputs.http.tokens else "none (lab mode)",
                                "endpoints": ["/services/collector/event", "/services/collector/raw",
                                              "/v1/logs", "/api/ingest/stream"]},
-            "outputs": [s.status() for s in self.sinks] + [{**e, "alive": False} for e in self.sink_errors],
+            "outputs": [{**s.status(), "in_flight": s.in_flight} for s in self.sinks]
+                       + [{**e, "alive": False} for e in self.sink_errors],
+            "recovery": self.recovery,
             "supported_sources": SUPPORTED_SOURCES,
             "output_compatibility": COMPATIBILITY,
         }

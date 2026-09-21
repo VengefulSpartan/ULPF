@@ -62,6 +62,9 @@ class Sink(threading.Thread):
         self.metrics: Dict[str, Any] = {"sent": 0, "failed": 0, "dead_lettered": 0, "retries": 0, "resent": 0,
                                         "last_error": None, "last_error_at": None, "last_success_at": None}
         self.last_replay: Optional[Dict[str, Any]] = None
+        self.ledger = None      # DeliveryLedger when running inside the engine; None in unit use
+        self.in_flight = 0      # events taken off the queue and being delivered right now
+        self._replay_ctx: Tuple[str, str] = ("manual", cfg.name)  # (trigger, owning output) during a replay
         self.validate_settings()
 
     # ---- to implement in subclasses -------------------------------------------------------
@@ -97,6 +100,15 @@ class Sink(threading.Thread):
         except queue.Full:
             self._dead_letter([(ocsf, source)], "the output's queue was full", "queue_full", 0)
 
+    def put_blocking(self, ocsf: Dict[str, Any], source: str = "", timeout: float = 60.0) -> bool:
+        """For recovery after a restart: wait for queue space instead of dead-lettering."""
+        try:
+            self.queue.put((ocsf, source), timeout=timeout)
+            self._idle.clear()
+            return True
+        except queue.Full:
+            return False
+
     # ---- worker loop ----------------------------------------------------------------------
     def run(self) -> None:
         while not self._stop_event.is_set() or not self.queue.empty():
@@ -127,6 +139,13 @@ class Sink(threading.Thread):
         return batch
 
     def _deliver(self, items: List[Item]) -> None:
+        self.in_flight = len(items)
+        try:
+            self._deliver_items(items)
+        finally:
+            self.in_flight = 0
+
+    def _deliver_items(self, items: List[Item]) -> None:
         batch = [e for e, _ in items]
         delay = self.cfg.retry_backoff_seconds
         attempts = 0
@@ -135,6 +154,7 @@ class Sink(threading.Thread):
             try:
                 self.send(batch)
                 self._delivered(len(batch))
+                self._ledger(self.cfg.name, "delivered", "live", batch)
                 return
             except DeliveryError as exc:
                 self._record_error(exc)
@@ -142,6 +162,7 @@ class Sink(threading.Thread):
                     refused = {id(e) for e in exc.rejected}
                     self._dead_letter([it for it in items if id(it[0]) in refused], str(exc), "rejected", attempts)
                     self._delivered(len(items) - len(refused))
+                    self._ledger(self.cfg.name, "delivered", "live", [e for e in batch if id(e) not in refused])
                     return
                 if not exc.retryable:
                     self.metrics["failed"] += len(items)
@@ -166,6 +187,13 @@ class Sink(threading.Thread):
             self._next_auto_at = time.monotonic()
             self._auto_backoff = self.cfg.auto_replay_interval_seconds
 
+    def _ledger(self, output: str, outcome: str, trigger: str, events: List[Dict[str, Any]], detail: str = "") -> None:
+        if self.ledger is not None and events:
+            try:
+                self.ledger.record(output, outcome, trigger, events, detail)
+            except Exception:  # the ledger must never stop delivery
+                logger.exception("delivery ledger write failed for %s", output)
+
     def _record_error(self, exc: Exception) -> None:
         self.metrics["last_error"] = f"{type(exc).__name__}: {exc}"[:500]
         self.metrics["last_error_at"] = now_iso()
@@ -174,32 +202,40 @@ class Sink(threading.Thread):
     def _dead_letter(self, items: List[Item], reason: str, kind: str, attempts: int) -> None:
         self.store.append([entry(e, kind, reason, attempts, src, self.cfg.name) for e, src in items])
         self.metrics["dead_lettered"] += len(items)
+        self._ledger(self.cfg.name, "dead_lettered", "queue_full" if kind == "queue_full" else "live",
+                     [e for e, _ in items], f"{kind}: {reason}")
 
     # ---- dead-letter replay ---------------------------------------------------------------
     def _replay_send(self, entries: List[Dict[str, Any]]) -> Tuple[int, List[Dict[str, Any]]]:
         """Deliver dead-letter entries once, no retries. Raises if the destination accepted nothing."""
         events = [e["event"] for e in entries]
+        refused: List[Dict[str, Any]] = []
         try:
             self.send(events)
         except DeliveryError as exc:
             if not exc.rejected:
                 raise
             refused_ids = {id(e) for e in exc.rejected}
-            refused = []
             for e in entries:
                 if id(e["event"]) in refused_ids:
                     e.update(kind="rejected", reason=str(exc)[:500], at=now_iso(),
                              attempts=int(e.get("attempts", 1)) + 1)
                     refused.append(e)
-            self.metrics["resent"] += len(entries) - len(refused)
-            self.metrics["last_success_at"] = now_iso()
-            return len(entries) - len(refused), refused
-        self.metrics["resent"] += len(entries)
+        refused_ids = {id(e["event"]) for e in refused}
+        done = [e for e in events if id(e) not in refused_ids]
+        self.metrics["resent"] += len(done)
         self.metrics["last_success_at"] = now_iso()
-        return len(entries), []
+        trigger, owner = self._replay_ctx
+        self._ledger(self.cfg.name, "delivered", trigger, done,
+                     "re-sent from dead letters" if owner == self.cfg.name else f"dead letters of {owner}")
+        if owner != self.cfg.name:  # the owning output's events are now accounted for elsewhere
+            self._ledger(owner, "rerouted", trigger, done, f"delivered through {self.cfg.name}")
+        self._ledger(owner, "dead_lettered", trigger, [e["event"] for e in refused], "rejected again on re-send")
+        return len(done), refused
 
     def _execute(self, job: ReplayJob) -> None:
         job.progress["started_at"] = now_iso()
+        self._replay_ctx = (job.trigger, job.store.name)
         try:
             job.store.replay(self._replay_send, batch_size=self.cfg.batch_size, kinds=job.kinds, limit=job.limit,
                              progress=job.progress, should_stop=self._stop_event.is_set)

@@ -236,14 +236,93 @@ def _export():
     )
 
 
+def _reconcile_view():
+    st.markdown("##### Is every log line accounted for?")
+    st.caption("Every stored event, at every output: delivered, excluded by the output's filter, waiting in dead "
+               "letters, or in flight. Each outcome is a record in a hash-chained delivery ledger, so the numbers "
+               "below can be proven, not just displayed.")
+    top = st.columns([1, 1, 3])
+    top[0].button("↻ Re-check", key="rec_refresh", use_container_width=True)
+    if top[1].button("🧾 Generate audit report", key="rec_report", type="primary", use_container_width=True):
+        with st.spinner("Verifying both chains and building the report..."):
+            st.session_state["audit_pdf"] = APIClient.get_audit_report("pdf")
+            st.session_state["audit_json"] = APIClient.get_audit_report("json")
+    pdf, js = st.session_state.get("audit_pdf"), st.session_state.get("audit_json")
+    if pdf or js:
+        with top[2]:
+            d1, d2 = st.columns(2)
+            if pdf and pdf.get("ok"):
+                d1.download_button("📄 Download PDF", pdf["data"], file_name=pdf["filename"], mime="application/pdf",
+                                   use_container_width=True, key="dl_pdf")
+            elif pdf:
+                d1.error(pdf.get("error"))
+            if js and js.get("ok"):
+                d2.download_button("{ } Download JSON", js["data"], file_name=js["filename"],
+                                   mime="application/json", use_container_width=True, key="dl_json")
+            elif js:
+                d2.error(js.get("error"))
+
+    rec = APIClient.get_reconciliation()
+    if rec is None:
+        st.warning("The API server is not reachable, so there is nothing to reconcile yet.")
+        return
+    (st.success if rec["all_accounted"] else st.error)(rec["verdict"])
+
+    p, integ, deliv = rec["pipeline"], rec.get("integrity") or {}, rec.get("delivery_ledger") or {}
+    c = st.columns(5)
+    c[0].markdown(_card("Archived raw", f"{p['raw_archived']:,}", "lines, byte-for-byte"), unsafe_allow_html=True)
+    c[1].markdown(_card("Normalised", f"{p['normalized']:,}", "OCSF 1.1.0 events"), unsafe_allow_html=True)
+    c[2].markdown(_card("Hash-chained", f"{p['hash_chained']:,}",
+                        "same size as archive" if p["consistent"] else "sizes differ",
+                        "#0F172A" if p["consistent"] else "#B91C1C"), unsafe_allow_html=True)
+    c[3].markdown(_card("Integrity chain", "valid" if integ.get("is_valid") else "FAILED",
+                        f"{integ.get('verified_records', 0):,} records verified",
+                        "#2E7D32" if integ.get("is_valid") else "#B91C1C"), unsafe_allow_html=True)
+    c[4].markdown(_card("Delivery ledger", "valid" if deliv.get("is_valid") else "FAILED",
+                        f"{deliv.get('batches', 0):,} chained records",
+                        "#2E7D32" if deliv.get("is_valid") else "#B91C1C"), unsafe_allow_html=True)
+
+    st.markdown("##### Per output")
+    rows = [{"Output": o["output"], "Owed": o["owed"], "Delivered": o["delivered"], "Re-sent": o["resent"],
+             "Via other": o["rerouted"], "Filtered": o["filtered"], "Dead letters": o["dead_letter_waiting"],
+             "In flight": o["in_flight"], "Unaccounted": o["unaccounted"], "Dupes": o["duplicates"],
+             "Status": "✅ balanced" if o["status"] == "balanced" else "❌ unaccounted"} for o in rec["outputs"]]
+    if rows:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("No outputs have been configured yet.")
+    st.caption("Owed = stored events since the output was first configured = delivered (re-sent ones included) + "
+               "delivered via another output + filtered out + waiting in dead letters + in flight + unaccounted. "
+               "Unaccounted must be 0. Dupes counts events delivered more than once (at-least-once re-sends).")
+    for o in rec["outputs"]:
+        for n in o["notes"]:
+            st.caption(f"**{o['output']}**: {n}")
+    r = rec.get("recovery") or {}
+    if r.get("requeued") or r.get("filtered"):
+        st.info(f"After the last restart, {r.get('requeued', 0):,} events that outputs still owed were sent again "
+                f"from the archive ({r.get('state')}).")
+
+    ex = rec.get("exceptions") or []
+    st.markdown("##### Delivery exceptions (newest first)")
+    if ex:
+        st.dataframe(pd.DataFrame([{
+            "From (UTC)": e["from"][:19].replace("T", " "), "To": e["to"][11:19], "Output": e["output"],
+            "Outcome": e["outcome"].replace("_", " "), "Trigger": e["trigger"], "Batches": e["batches"],
+            "Events": e["count"], "Detail": e["detail"]} for e in ex]), use_container_width=True, hide_index=True)
+    else:
+        st.caption("None: every batch was delivered at the first attempt.")
+
+
 def render_integrations():
     st.markdown("## Connectors")
     st.caption("Plug-and-play: devices and forwarders stream in over syslog, Splunk HEC, OTLP, files or Kafka; "
                "normalised OCSF events stream out to SIEMs, observability platforms and data lakes.")
-    tab_live, tab_src, tab_dst, tab_exp = st.tabs(
-        ["📡 Live status", "🔌 Connect a log source", "🎯 Connect a destination", "💾 Export"])
+    tab_live, tab_rec, tab_src, tab_dst, tab_exp = st.tabs(
+        ["📡 Live status", "🧾 Reconcile & audit", "🔌 Connect a log source", "🎯 Connect a destination", "💾 Export"])
     with tab_live:
         _live_status()
+    with tab_rec:
+        _reconcile_view()
     with tab_src:
         _connect_source()
     with tab_dst:
