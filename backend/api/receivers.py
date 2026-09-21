@@ -13,7 +13,9 @@ Everything received is queued to the connector engine and processed like
 syslog: archived byte-for-byte, parsed, normalised to OCSF, hash-chained and
 forwarded to the configured outputs.
 """
+import gzip
 import json
+import zlib
 from typing import Any, Dict, Iterable, List, Optional
 
 from fastapi import APIRouter, Request
@@ -34,6 +36,21 @@ def _authorised(request: Request) -> bool:
         if auth.startswith(scheme) and auth[len(scheme):].strip() in tokens:
             return True
     return request.headers.get("x-tracelog-token") in tokens
+
+
+async def _body(request: Request) -> bytes:
+    """Request body, decompressed when the sender used Content-Encoding gzip or deflate
+    (the OpenTelemetry Collector gzips by default; Splunk forwarders and Vector can too)."""
+    body = await request.body()
+    enc = request.headers.get("content-encoding", "").lower()
+    if "gzip" in enc:
+        return gzip.decompress(body)
+    if "deflate" in enc:
+        try:
+            return zlib.decompress(body)
+        except zlib.error:
+            return zlib.decompress(body, -zlib.MAX_WBITS)
+    return body
 
 
 def _peer(request: Request) -> Optional[str]:
@@ -68,13 +85,14 @@ def hec_health():
 
 
 @router.post("/services/collector/event")
+@router.post("/services/collector/event/1.0")
 @router.post("/services/collector")
 async def hec_event(request: Request):
     if not engine.config.inputs.http.enabled:
         return _hec_error("HEC is disabled", 1, 403)
     if not _authorised(request):
         return _hec_error("Invalid token", 4, 401)
-    body = (await request.body()).decode("utf-8", errors="replace")
+    body = (await _body(request)).decode("utf-8", errors="replace")
     if not body.strip():
         return _hec_error("No data", 5, 400)
     records = []
@@ -83,6 +101,8 @@ async def hec_event(request: Request):
             if not isinstance(obj, dict) or "event" not in obj:
                 return _hec_error("Event field is required", 12, 400)
             ev = obj["event"]
+            if isinstance(ev, dict) and isinstance(ev.get("_raw"), str):  # Cribl and Splunk-style wrapped events
+                ev = ev["_raw"]
             raw = ev if isinstance(ev, str) else json.dumps(ev, separators=(",", ":"))
             hints = {k: str(obj[k]) for k in ("host", "source", "sourcetype") if obj.get(k)}
             if "host" in hints:
@@ -96,12 +116,13 @@ async def hec_event(request: Request):
 
 
 @router.post("/services/collector/raw")
+@router.post("/services/collector/raw/1.0")
 async def hec_raw(request: Request):
     if not engine.config.inputs.http.enabled:
         return _hec_error("HEC is disabled", 1, 403)
     if not _authorised(request):
         return _hec_error("Invalid token", 4, 401)
-    body = await request.body()
+    body = await _body(request)
     lines = [l for l in body.split(b"\n") if l.strip()]
     if not lines:
         return _hec_error("No data", 5, 400)
@@ -133,7 +154,7 @@ async def otlp_logs(request: Request):
     if "protobuf" in ctype:
         return JSONResponse({"message": "Use OTLP/HTTP JSON encoding (e.g. `encoding: json` in the "
                                         "Collector's otlphttp exporter)."}, status_code=415)
-    body = await request.body()
+    body = await _body(request)
     try:
         payload = json.loads(body or b"{}")
     except ValueError:
@@ -155,23 +176,45 @@ async def otlp_logs(request: Request):
 
 @router.post("/api/ingest/stream")
 async def ingest_stream(request: Request, source: Optional[str] = None, vendor: Optional[str] = None,
-                        product: Optional[str] = None):
-    """Plain log lines (one per line), NDJSON, or a JSON array of strings/objects."""
+                        product: Optional[str] = None, message_field: Optional[str] = None):
+    """Plain log lines (one per line), NDJSON, or a JSON array of strings/objects.
+
+    `message_field` takes the original log line out of JSON objects that wrap it, e.g.
+    `message` for Logstash / Beats (`http` output with `format => json_batch`) or `log` for Fluent Bit.
+    """
     if not _authorised(request):
         return JSONResponse({"detail": "unauthorised"}, status_code=401)
-    body = await request.body()
+    body = await _body(request)
     hints = {k: v for k, v in (("source_name", source), ("vendor", vendor), ("product", product)) if v}
     stripped = body.strip()
-    raws: List[bytes] = []
+    items: List[Any] = []
     if stripped.startswith(b"["):
         try:
-            for item in json.loads(stripped):
-                raws.append(item.encode("utf-8") if isinstance(item, str)
-                            else json.dumps(item, separators=(",", ":")).encode("utf-8"))
+            items = list(json.loads(stripped))
         except ValueError:
-            raws = [l for l in body.split(b"\n") if l.strip()]
+            items = [l for l in body.split(b"\n") if l.strip()]
     else:
-        raws = [l for l in body.split(b"\n") if l.strip()]
-    _submit("http-stream", [InboundRecord(raw=r, transport="http", input_name="http-stream", peer_ip=_peer(request),
-                                          hints=hints) for r in raws], len(body))
-    return {"accepted": len(raws)}
+        items = [l for l in body.split(b"\n") if l.strip()]
+    records: List[InboundRecord] = []
+    for item in items:
+        item_hints = hints
+        if message_field and isinstance(item, bytes) and item.lstrip().startswith(b"{"):
+            try:
+                item = json.loads(item)
+            except ValueError:
+                pass
+        if isinstance(item, dict) and message_field and isinstance(item.get(message_field), str):
+            host = item.get("host")
+            if isinstance(host, dict):  # Elastic Common Schema: host.name
+                host = host.get("name") or host.get("hostname")
+            if isinstance(host, str) and host:
+                item_hints = {**hints, "hostname": host}
+            item = item[message_field]
+        if isinstance(item, str):
+            item = item.encode("utf-8")
+        elif not isinstance(item, bytes):
+            item = json.dumps(item, separators=(",", ":")).encode("utf-8")
+        records.append(InboundRecord(raw=item, transport="http", input_name="http-stream", peer_ip=_peer(request),
+                                     hints=item_hints))
+    _submit("http-stream", records, len(body))
+    return {"accepted": len(records)}

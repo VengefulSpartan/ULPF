@@ -12,4 +12,4 @@ httpx>=0.27.0
 pyyaml>=6.0
 # Optional connectors (install only the ones you use):
 #   pyarrow>=15.0        Parquet output (data lakes, Amazon Security Lake, Snowflake/Databricks loads)
-#   kafka-python>=2.0.2  Kafka input and output
+#   kafka-python-ng>=2.2  Kafka input and output

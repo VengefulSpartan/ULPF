@@ -24,6 +24,7 @@
 6. [Database Schema & SQLite Storage Architecture](#6-database-schema--sqlite-storage-architecture)
 7. [REST API Reference Matrix](#7-rest-api-reference-matrix)
 8. [Installation, Startup & Verification Guide](#8-installation-startup--verification-guide)
+9. [Plug-and-Play Connectors: Log Sources → TRACELOG → SIEM / Observability](#9-plug-and-play-connectors)
 
 ---
 
@@ -33,9 +34,10 @@ Modern enterprise security operations centers (SOCs) ingest massive volumes of p
 
 **ULPF (Universal Log Pre-processing Framework)** solves this fundamental challenge through three foundational tenets:
 1. **Lossless Preservation**: The exact raw payload is preserved verbatim with an immutable SHA-256 hash before any normalization occurs.
-2. **Deterministic OCSF Normalization**: Events are mapped to standard Open Cybersecurity Schema Framework (OCSF v1.1.0) classes (`Network Activity 4001`, `Authentication 3001`, `Security Finding 2001`).
+2. **Deterministic OCSF Normalization**: Events are mapped to standard Open Cybersecurity Schema Framework (OCSF v1.1.0) classes (`Network Activity 4001`, `Authentication 3002`, `Detection Finding 2004`, and `Base Event 0` for anything unrecognised).
 3. **Provable Cryptographic Lineage**: A transaction-safe SHA-256 hash-chain guarantees that any record alteration, deletion, or reordering is immediately flagged.
-4. **Autonomous Operational Workflows**: Zero-touch parser candidate generation and deterministic cross-source correlation connect disparate security events into an evidence-linked incident timeline.
+4. **Plug-and-Play Connectivity**: Devices stream in over syslog (UDP/TCP/TLS), Splunk HEC, OTLP, files or Kafka with no agent, and normalised OCSF events stream out to Splunk, Sentinel, QRadar, Elastic, Wazuh, Graylog, Grafana Loki, Datadog, New Relic, OTLP backends and data lakes at the same time (see [section 9](#9-plug-and-play-connectors)).
+5. **Autonomous Operational Workflows**: Zero-touch parser candidate generation and deterministic cross-source correlation connect disparate security events into an evidence-linked incident timeline.
 
 ---
 
@@ -69,7 +71,7 @@ Modern enterprise security operations centers (SOCs) ingest massive volumes of p
 ```
 
 ### End-to-End Dataflow:
-1. **Ingestion**: A log line enters through `POST /api/ingest/single`, `POST /api/ingest/batch`, or file upload.
+1. **Ingestion**: Devices stream logs in over syslog UDP/TCP/TLS, the Splunk HEC and OTLP receivers, file tailing or Kafka (see [section 9](#9-plug-and-play-connectors)); analysts can also use `POST /api/ingest/single`, `POST /api/ingest/batch`, or file upload.
 2. **Raw Archival**: `IngestionPipeline` generates an immutable `raw_id`, computes `SHA-256(raw_text)`, and writes the raw record to `raw_logs`.
 3. **Format Detection & Parsing**: `FormatDetector` inspects the line structure, routing it to `CEFParser`, `LEEFParser`, `SyslogParser`, `KVParser`, or `JSONParser`.
 4. **OCSF v1.1.0 Normalization**: `OCSFNormalizer` transforms vendor-specific attributes (`src`, `spt`, `dst`, `dpt`, `act`, `usrName`) into canonical OCSF fields with standardized categories, severities, and timestamps.
@@ -123,7 +125,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
   - `Traffic`: Metric counters (`bytes_in`, `bytes_out`, `packets`).
   - `User`: Identity metadata (`name`, `domain`, `type`).
   - `Finding`: Security finding / alert details (`title`, `desc`, `uid`, `types`).
-  - `OCSFEvent`: The master normalized event record supporting Class 4001 (Network Activity), Class 3001 (Authentication), and Class 2001 (Security Finding). Contains `unmapped` dictionary for preserving vendor-specific attributes.
+  - `OCSFEvent`: The master normalized event record supporting Class 4001 (Network Activity), Class 3002 (Authentication), Class 2004 (Detection Finding) and Class 0 (Base Event). Contains `unmapped` dictionary for preserving vendor-specific attributes.
   - `RawLogRecord`: Schema for the raw, pre-parsed log storage table.
 
 #### `backend/models/parser.py`
@@ -224,7 +226,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 #### Normalization
 - **`backend/services/normalization/ocsf_normalizer.py`**:
   - Maps heterogeneous log attributes to the standardized OCSF v1.1.0 schema.
-  - Dynamic class assignment: Maps network connections to `Class 4001`, VPN/logons to `Class 3001`, and IDS alerts/threats to `Class 2001`.
+  - Dynamic class assignment: Maps network connections to `Class 4001`, VPN/logons to `Class 3002`, and IDS alerts/threats to `Class 2004`.
   - Severity mapping: Translates vendor-specific levels (e.g. numeric 1-10, "emerg", "crit", "warn", "info") to standard OCSF 1-5 scale (`Informational`, `Low`, `Medium`, `High`, `Critical`).
   - Timestamp parser: Normalizes ISO 8601, BSD syslog dates, and Unix epoch timestamps into UTC ISO strings and millisecond epochs.
   - Residual capture: Any field not explicitly mapped to standard OCSF attributes is preserved in the `unmapped` dictionary.
@@ -263,6 +265,17 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
   - Master pipeline orchestrator connecting Raw Storage $\rightarrow$ Parsing $\rightarrow$ Normalization $\rightarrow$ Integrity Chaining $\rightarrow$ Source Counter Updates within atomic SQLite transactions.
 
 ---
+
+#### Vendor Packs (`backend/services/vendors/`)
+- `envelope.py` splits the syslog header (RFC 3164 / 5424, structured data) from the message; one module per vendor (`paloalto.py`, `fortinet.py`, `cisco.py`, `checkpoint.py`, `juniper.py`, `sophos.py`, `sonicwall.py`, `pfsense.py`, `ids.py` for Suricata, Zeek and Snort) maps native fields to OCSF classes and activities. `parsing/dispatch.py` tries the packs first and falls back to the generic CEF / LEEF / syslog / key=value / JSON parsers.
+
+#### Connectors (`backend/connectors/`)
+- `config.py`: loads `config/tracelog.yaml` (path from `TRACELOG_CONFIG`) and fills `${VAR}` from the environment or `.env`.
+- `inputs/syslog.py`: asyncio syslog listeners for UDP, TCP and TLS with RFC 6587 framing. `inputs/pollers.py`: file tailing with rotation handling and saved offsets, and a Kafka consumer.
+- `engine.py`: the ingest queue, disk spool for bursts, batch worker and output router, started and stopped with the API server.
+- `outputs/`: one sink per destination family (`http_sinks.py`, `stream_sinks.py`, `file_sinks.py`) sharing queues, retries, dead-letter files and filters from `base.py`; wire formats (CEF, LEEF 2.0, GELF, OTLP, RFC 5424) in `formats.py`.
+- `guides.py`: the per-vendor and per-destination setup guides shown on the Connectors page and generated into `docs/CONNECTORS.md`.
+- `backend/services/ingestion/stream.py`: lossless batched ingestion for streamed logs with source auto-registration. `backend/services/normalization/ocsf_export.py`: the strict OCSF 1.1.0 event every output sends, plus a validator. `backend/api/receivers.py`: the HEC, OTLP and stream receivers. `backend/api/connectors.py`: status, test and flush endpoints.
 
 ### Frontend Operations Center (`frontend/`)
 
@@ -325,11 +338,11 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 
 #### `frontend/views/schema_page.py`
 - **Role**: OCSF v1.1.0 schema dictionary explorer.
-- **Features**: Reference documentation for OCSF classes (4001, 3001, 2001), interactive attribute dictionary with types and requirement levels, and interactive canonical JSON document viewer.
+- **Features**: Reference documentation for OCSF classes (4001, 3002, 2004), interactive attribute dictionary with types and requirement levels, and interactive canonical JSON document viewer.
 
 #### `frontend/views/integrations_page.py`
-- **Role**: Downstream data export and SIEM forwarding.
-- **Features**: One-click download buttons for OCSF JSON and CSV tables, Splunk HEC and Elastic Logstash configuration templates, and REST API documentation links.
+- **Role**: Connectors page: live inputs and outputs, and setup for devices and destinations.
+- **Features**: Live counters for every input (syslog, HEC, OTLP, files, Kafka) and output (sent, failed, dead-lettered, last error), a "Send test event" button per output, copy-paste device and forwarder configuration with the TRACELOG address filled in, destination setup steps with the matching `config/tracelog.yaml` block, and strict OCSF NDJSON/JSON/CSV downloads.
 
 #### `frontend/views/settings_page.py`
 - **Role**: System parameters, policies, and database maintenance.
@@ -352,7 +365,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 ### Automated Test Suite (`tests/`)
 
 - **`tests/test_parsers.py`**: Unit tests verifying deterministic parsing across CEF, LEEF, RFC 3164 Syslog, RFC 5424 Syslog, KV pairs, and JSON.
-- **`tests/test_normalization.py`**: Tests verifying OCSF Class 4001, 3001, and 2001 normalization, severity mappings, and residual field preservation.
+- **`tests/test_normalization.py`**: Tests verifying OCSF Class 4001, 3002, and 2004 normalization, severity mappings, and residual field preservation.
 - **`tests/test_integrity_chain.py`**: Cryptographic tests verifying canonical JSON serialization, hash-chain calculation, modification detection, and deletion/reordering detection.
 - **`tests/test_parser_generation.py`**: Tests candidate parser synthesis, validation testing against sample batches, and error scoring.
 - **`tests/test_correlation_rca.py`**: End-to-end test verifying multi-device correlation, temporal ordering, and fact-vs-inference classification.
@@ -381,7 +394,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 | **🔎 Log Explorer** | Log query & raw-to-OCSF inspection | Search logs by IP or free text. Apply source and severity filters. Select any row to see side-by-side raw payload and OCSF JSON. | `GET /api/events`<br>`GET /api/events/{id}` |
 | **🛡️ Integrity & Lineage** | Cryptographic verification (USP 2) | Click **Run Full Chain Cryptographic Audit**. Simulate record tampering in SQLite. Observe immediate chain failure. Click **Restore Record**. | `GET /api/integrity/verify`<br>`POST /api/integrity/tamper`<br>`POST /api/integrity/restore` |
 | **🧬 Correlation & RCA** | Root Cause Analysis (USP 3) | Enter a pivot IP (e.g. `10.0.1.15`), click **Run RCA Correlation**. Inspect Plotly chronological timeline, Observed Facts, and Inferred Hypotheses. | `POST /api/correlation/run`<br>`GET /api/correlation/incidents` |
-| **📐 Schema Explorer** | OCSF standard reference | Browse OCSF classes (4001, 3001, 2001). Search the attribute dictionary. Inspect the interactive canonical JSON document. | Local Schema Reference |
+| **📐 Schema Explorer** | OCSF standard reference | Browse OCSF classes (4001, 3002, 2004). Search the attribute dictionary. Inspect the interactive canonical JSON document. | Local Schema Reference |
 | **🔗 Integrations** | Downstream data export | Download OCSF JSON or flattened CSV files. Review Splunk HEC and Elastic Logstash forwarder templates. | `GET /api/export/ocsf-json`<br>`GET /api/export/csv` |
 | **⚙️ Settings** | Runtime configuration & maintenance | Review air-gapped deployment status and storage parameters. Click **Reset Database** to flush tables and re-test from scratch. | Direct DB Maintenance API |
 
@@ -617,6 +630,13 @@ All endpoints return standard JSON responses and are fully documented interactiv
 | `GET` | `/api/analytics/overview` | Returns system KPIs & counts | None | Operational Metrics Object |
 | `GET` | `/api/export/ocsf-json` | Exports OCSF JSON file | `limit` (default: 1000) | Streamed JSON attachment |
 | `GET` | `/api/export/csv` | Exports flattened CSV file | `limit` (default: 1000) | Streamed CSV attachment |
+| `GET` | `/api/connectors` | Live status of every input and output, supported sources and destinations | None | `{"pipeline", "inputs", "outputs", ...}` |
+| `POST` | `/api/connectors/outputs/{name}/test` | Sends one OCSF event to an output synchronously | None | `{"ok": true, "detail": ...}` |
+| `POST` | `/api/connectors/flush` | Waits until everything received is stored and handed to the outputs | `timeout` | `{"drained": true, ...}` |
+| `POST` | `/services/collector/event` | Splunk HEC receiver (Fluent Bit, Vector, Cribl, OTel `splunk_hec`) | HEC JSON events | `{"text": "Success", "code": 0}` |
+| `POST` | `/services/collector/raw` | Splunk HEC raw receiver, one log per line | Raw lines, `host`, `sourcetype` | `{"text": "Success", "code": 0}` |
+| `POST` | `/v1/logs` | OpenTelemetry OTLP/HTTP logs receiver (JSON, gzip accepted) | `ExportLogsServiceRequest` JSON | `{"partialSuccess": {}}` |
+| `POST` | `/api/ingest/stream` | Lines, NDJSON or a JSON array; `message_field` unwraps Logstash/Beats events | `source`, `vendor`, `product`, `message_field` | `{"accepted": N}` |
 
 ---
 
@@ -659,12 +679,62 @@ python -m streamlit run frontend/app.py --server.port 8501
 ### 5. Running the Automated Test Suite
 To execute the comprehensive test suite:
 ```powershell
-python -m pytest tests/test_parsers.py tests/test_normalization.py tests/test_integrity_chain.py tests/test_parser_generation.py tests/test_correlation_rca.py tests/test_api_endpoints.py -v
+python -m pytest -q
 ```
-**Expected Output**: `22 passed in < 1.0s` (100% pass rate).
+**Expected Output**: every test passes (189 at the time of writing), including the connector tests that run real syslog sockets and mock Splunk, Elasticsearch, Loki, OTLP, Sentinel, Datadog, GELF and syslog/CEF/LEEF receivers.
 
 ### 6. Docker Deployment
 ```bash
 docker-compose up --build -d
 ```
-Access the dashboard at `http://localhost:8501` and the Swagger API at `http://localhost:8000/docs`.
+Access the dashboard at `http://localhost:8501` and the Swagger API at `http://localhost:8000/docs`. The backend container also publishes syslog on **514/udp and 514/tcp** (and 6514 for TLS), so devices can point at the Docker host's standard syslog port straight away. `config/` is mounted read-only, so connector changes need only `docker-compose restart ulpf-backend`.
+
+---
+
+## 9. Plug-and-Play Connectors
+
+TRACELOG runs as the layer between the devices that produce perimeter logs and the tools a SOC already uses to watch them. Nothing is installed on the devices: they keep sending standard syslog, or an existing forwarder relays it. Every line is archived byte-for-byte, parsed by a vendor pack, normalised to OCSF 1.1.0 and hash-chained, then delivered to every configured destination at once.
+
+```
+ LOG SOURCES                                  TRACELOG                     DESTINATIONS
+ Palo Alto · Fortinet · Cisco ASA/FTD    ┐                               ┌  Splunk (HEC) · Microsoft Sentinel
+ Check Point · Juniper SRX · Sophos      │    receive (syslog, HEC,      │  IBM QRadar (LEEF) · ArcSight & CEF SIEMs
+ SonicWall · pfSense · Suricata · Zeek   │    OTLP, files, Kafka)        │  Elastic · OpenSearch · Wazuh · Graylog
+ rsyslog · syslog-ng relays              ├──► archive raw bytes     ──►  ┤  Grafana Loki · OTLP backends
+ Fluent Bit · Vector · Cribl (HEC)       │    parse (vendor packs)       │  Datadog · New Relic · SOAR webhook
+ OpenTelemetry Collector (OTLP)          │    normalise to OCSF 1.1.0    │  Kafka · NDJSON · Parquet
+ Logstash · Kafka · log files            ┘    hash-chain, route          └  (air-gapped hand-off)
+```
+
+**Connect a device in one step.** Point its syslog at the TRACELOG host on port 514 (UDP or TCP). The device registers itself as a source on its first message, named after its own hostname, so devices behind a relay stay distinct. The Connectors page in the dashboard shows the exact commands for each vendor with your address filled in; the same guides are in [docs/CONNECTORS.md](docs/CONNECTORS.md).
+
+**Connect a destination in one block.** Add an output to `config/tracelog.yaml` (every type is shown in `config/tracelog.full-example.yaml`), keep secrets in the environment or `.env` as `${VAR}`, and restart. Use the dashboard's "Send test event" button to confirm delivery.
+
+| Inputs | Details |
+| :--- | :--- |
+| Syslog UDP / TCP / TLS | RFC 3164 and 5424, RFC 6587 octet-counting and newline framing, RFC 5425 TLS with optional client certificates |
+| Splunk HEC receiver | `/services/collector/event` and `/raw`, token auth, gzip; works with Fluent Bit, Vector, Cribl and OTel `splunk_hec` |
+| OTLP/HTTP logs | `/v1/logs`, JSON encoding, gzip |
+| HTTP stream | Lines, NDJSON, JSON arrays; unwraps Logstash/Beats `message` |
+| File tail | Globs, rotation and truncation handling, offsets saved across restarts (e.g. rsyslog's per-host files, Suricata `eve.json`) |
+| Kafka | Consumer groups on one or more topics |
+
+| Output type | Reaches |
+| :--- | :--- |
+| `splunk_hec` | Splunk Enterprise / Cloud, Splunk ES, Cribl Stream |
+| `sentinel` | Microsoft Sentinel / Azure Monitor (Logs Ingestion API with DCE and DCR) |
+| `syslog` with `format: leef` | IBM QRadar |
+| `syslog` with `format: cef` | ArcSight, LogRhythm / Exabeam, Securonix and other CEF SIEMs |
+| `syslog` with `format: json` | Wazuh manager, rsyslog / syslog-ng relays |
+| `elasticsearch`, `opensearch`, `wazuh_indexer` | Elastic Security, OpenSearch, Wazuh indexer |
+| `gelf` | Graylog |
+| `loki` | Grafana Loki and Grafana |
+| `otlp_http` | OpenTelemetry Collector, Dynatrace, SigNoz, Grafana Cloud, Honeycomb, OpenObserve |
+| `datadog`, `newrelic` | Datadog Logs, New Relic Logs |
+| `webhook` | SOAR platforms and any HTTPS JSON endpoint |
+| `kafka`, `file`, `parquet` | Data platforms, data lakes, Amazon Security Lake custom sources, air-gapped transfer |
+
+**Delivery guarantees.** A burst larger than the ingest queue is spooled to disk and replayed, never dropped. A line that no pack recognises is still archived, chained and forwarded as an OCSF Base Event. Each output has its own queue, retries with exponential backoff, a dead-letter file (`data/dead_letter/<output>.ndjson`) and optional filters by OCSF class, severity and source, so a slow or broken SIEM never holds up ingestion or the other outputs.
+
+**Live demo with a real sensor.** `docker compose -f docker-compose.devices.yml up` starts a Suricata sensor, a target web server and a traffic generator. TRACELOG tails `suricata-logs/eve.json` through the `suricata-eve` file input in the default configuration, so its alerts appear in the dashboard as Detection Findings as they happen.
+

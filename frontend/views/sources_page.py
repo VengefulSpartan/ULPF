@@ -20,48 +20,36 @@ def render_sources():
             st.warning("No log sources configured yet. Register a source or load demo datasets.")
 
         st.markdown("---")
-        st.markdown("##### Ingestion Protocols & Channel Status")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.markdown(
-                """
-                <div class="metric-card">
-                    <div class="metric-title">HTTP POST API</div>
-                    <div class="metric-value" style="font-size:1.2rem; color:#2E7D32;">● Active</div>
-                    <div class="metric-subtext">Endpoint: /api/ingest/*</div>
-                </div>
-                """, unsafe_allow_html=True
-            )
-        with c2:
-            st.markdown(
-                """
-                <div class="metric-card">
-                    <div class="metric-title">Batch File Upload</div>
-                    <div class="metric-value" style="font-size:1.2rem; color:#2E7D32;">● Active</div>
-                    <div class="metric-subtext">Supports .log, .txt, .json</div>
-                </div>
-                """, unsafe_allow_html=True
-            )
-        with c3:
-            st.markdown(
-                """
-                <div class="metric-card">
-                    <div class="metric-title">UDP/TCP Syslog 514</div>
-                    <div class="metric-value" style="font-size:1.2rem; color:#6C63A8;">● Socket Daemon</div>
-                    <div class="metric-subtext">Local demo listener module</div>
-                </div>
-                """, unsafe_allow_html=True
-            )
-        with c4:
-            st.markdown(
-                """
-                <div class="metric-card">
-                    <div class="metric-title">Cloud Pub/Sub (Kafka/AWS)</div>
-                    <div class="metric-value" style="font-size:1.2rem; color:#94A3B8;">○ Enterprise Connector</div>
-                    <div class="metric-subtext">Production enterprise tier</div>
-                </div>
-                """, unsafe_allow_html=True
-            )
+        st.markdown("##### Ingestion channels (live)")
+        conn = APIClient.get_connectors()
+        if conn is None:
+            st.info("Start the API server to see live syslog, HEC and OTLP channels. File upload and the "
+                    "single-line API work either way.")
+        else:
+            by_type = {}
+            for i in conn["inputs"]:
+                t = i.get("type", "")
+                key = "Syslog" if t.startswith("syslog") else "HTTP (HEC / OTLP / NDJSON)" if t == "http" else t.title()
+                agg = by_type.setdefault(key, {"received": 0, "where": [], "last": None})
+                agg["received"] += i.get("received", 0)
+                agg["where"].append(i.get("listening") or i.get("name"))
+                agg["last"] = max(filter(None, [agg["last"], i.get("last_received_at")]), default=None)
+            if conn["http_receivers"]["enabled"]:
+                by_type.setdefault("HTTP (HEC / OTLP / NDJSON)", {"received": 0, "where": ["/services/collector, /v1/logs"],
+                                                                  "last": None})
+            cols = st.columns(max(len(by_type), 1))
+            for col, (name, agg) in zip(cols, by_type.items()):
+                col.markdown(
+                    f"""
+                    <div class="metric-card">
+                        <div class="metric-title">{name}</div>
+                        <div class="metric-value" style="font-size:1.2rem; color:#2E7D32;">● {agg['received']:,} received</div>
+                        <div class="metric-subtext">{' · '.join(str(w) for w in agg['where'][:3])}</div>
+                    </div>
+                    """, unsafe_allow_html=True
+                )
+            st.caption("New devices register themselves here on their first message. Setup steps for each vendor "
+                       "are on the Connectors page.")
 
     # 2. Add Source Tab
     with tab_add:
