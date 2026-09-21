@@ -9,11 +9,21 @@ from backend.models.event import (
 class OCSFNormalizer:
     """
     Normalizes parsed log dictionaries into OCSF v1.1.0 compatible schema.
-    Explicitly targets:
-    - Class 4001: Network Activity
-    - Class 3001: Authentication
-    - Class 2001: Security Finding
+    Explicitly targets (class_uid = category_uid * 1000 + class id):
+    - Class 4001: Network Activity   (activity 6 = Traffic, 1 = Open, 2 = Close, 5 = Refuse)
+    - Class 3002: Authentication     (activity 1 = Logon, 2 = Logoff)
+    - Class 2004: Detection Finding  (activity 1 = Create); replaces Security Finding
+      (2001), which OCSF deprecated in 1.1.0.
+
+    Vendor packs may pass hints in the parsed dict: ``_ocsf_class``,
+    ``_activity_id`` and ``_activity_name`` override the heuristics below.
     """
+
+    CLASS_INFO = {
+        4001: ("Network Activity", 4, "Network Activity", 6, "Traffic"),
+        3002: ("Authentication", 3, "Identity & Access Management", 1, "Logon"),
+        2004: ("Detection Finding", 2, "Findings", 1, "Create"),
+    }
 
     # Field aliases
     SRC_IP_ALIASES = ["src", "src_ip", "srcip", "source_ip", "saddr", "c-ip", "sourceAddress", "src_addr", "client_ip"]
@@ -148,7 +158,7 @@ class OCSFNormalizer:
         unmapped = {}
 
         # 1. Determine Class UID
-        # Check if Security Finding (alert, signature, attack)
+        # Check if Detection Finding (alert, signature, attack)
         finding_title = cls.find_first(data, ["signature", "rule_name", "attack", "threat_name", "alert", "event_name", "msg"])
         is_finding = bool(cls.find_first(data, ["alert", "signature", "threat_name", "attack", "ids_type"])) or "IDS" in product.upper() or "SURICATA" in product.upper() or "SNORT" in product.upper()
         
@@ -156,27 +166,21 @@ class OCSFNormalizer:
         user_val = cls.find_first(data, cls.USER_ALIASES)
         is_auth = bool(user_val and any(x in str(raw_text).lower() for x in ["login", "logon", "auth", "vpn", "session-open"])) or "VPN" in product.upper()
 
-        if is_finding:
-            class_uid = 2001
-            class_name = "Security Finding"
-            category_uid = 2
-            category_name = "Findings"
-            activity_id = 1
-            activity_name = "Detection"
+        hinted_class = data.get("_ocsf_class")
+        if hinted_class in cls.CLASS_INFO:
+            class_uid = hinted_class
+            is_finding = class_uid == 2004
+            is_auth = class_uid == 3002
+        elif is_finding:
+            class_uid = 2004
         elif is_auth:
-            class_uid = 3001
-            class_name = "Authentication"
-            category_uid = 3
-            category_name = "Identity & Access Management"
-            activity_id = 1
-            activity_name = "Logon"
+            class_uid = 3002
         else:
             class_uid = 4001
-            class_name = "Network Activity"
-            category_uid = 4
-            category_name = "Network Activity"
-            activity_id = 1
-            activity_name = "Traffic"
+        class_name, category_uid, category_name, activity_id, activity_name = cls.CLASS_INFO[class_uid]
+        if isinstance(data.get("_activity_id"), int):
+            activity_id = data["_activity_id"]
+            activity_name = str(data.get("_activity_name") or activity_name)
 
         # 2. Extract Endpoints
         src_ip = cls.find_first(data, cls.SRC_IP_ALIASES)
@@ -279,6 +283,7 @@ class OCSFNormalizer:
 
         return OCSFEvent(
             class_uid=class_uid,
+            type_uid=class_uid * 100 + activity_id,
             class_name=class_name,
             category_uid=category_uid,
             category_name=category_name,

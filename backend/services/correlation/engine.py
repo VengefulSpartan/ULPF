@@ -129,7 +129,7 @@ class CorrelationEngine:
             delta_sec = abs(nxt["time_epoch_ms"] - curr["time_epoch_ms"]) / 1000.0
 
             # 1. VPN auth followed by internal scan or firewall activity
-            if curr["class_uid"] == 3001 and nxt["class_uid"] == 4001:
+            if curr["class_uid"] == 3002 and nxt["class_uid"] == 4001:
                 if delta_sec < 1800: # within 30 min
                     attack_phases.add("Initial Access -> Lateral Recon")
                     mitre_tactics.add("TA0001 Initial Access")
@@ -144,7 +144,7 @@ class CorrelationEngine:
                     ))
 
             # 2. Firewall traffic followed by IDS Alert
-            if curr["class_uid"] == 4001 and nxt["class_uid"] == 2001:
+            if curr["class_uid"] == 4001 and nxt["class_uid"] == 2004:
                 if (curr["src_ip"] == nxt["src_ip"] or curr["dst_ip"] == nxt["dst_ip"]) and delta_sec < 600:
                     attack_phases.add("Exploitation Activity")
                     mitre_tactics.add("TA0008 Lateral Movement")
