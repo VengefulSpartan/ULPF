@@ -296,3 +296,29 @@ class APIClient:
             return body if r.status_code == 200 else {"state": "error", "error": body.get("detail", r.text[:300])}
         except Exception as exc:
             return {"state": "error", "error": f"API server not reachable: {exc}"}
+
+    # ---- reconciliation and audit report ----------------------------------------------------
+    @classmethod
+    def get_reconciliation(cls) -> Optional[Dict[str, Any]]:
+        try:
+            r = requests.get(f"{BASE_URL}/audit/reconcile", timeout=60.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def get_audit_report(cls, fmt: str = "pdf") -> Dict[str, Any]:
+        """Returns {"ok", "data" (bytes), "filename", "error"}."""
+        try:
+            r = requests.get(f"{BASE_URL}/audit/report.{fmt}", timeout=120.0)
+            if r.status_code != 200:
+                detail = r.json().get("detail") if r.headers.get("content-type", "").startswith("application/json") \
+                    else r.text[:300]
+                return {"ok": False, "error": detail}
+            cd = r.headers.get("content-disposition", "")
+            name = cd.split("filename=")[-1].strip('"') if "filename=" in cd else f"tracelog-audit.{fmt}"
+            return {"ok": True, "data": r.content, "filename": name}
+        except Exception as exc:
+            return {"ok": False, "error": f"API server not reachable: {exc}"}

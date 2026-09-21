@@ -122,6 +122,27 @@ def build() -> str:
         "even that batch creates no duplicates; for other destinations `metadata.uid` identifies a repeated "
         "event. Entries are removed only after the destination accepted them.", "",
     ]
+    parts += [
+        "## Reconciliation and the audit report", "",
+        "Every outcome of every stored event at every output goes into a hash-chained delivery ledger "
+        "(`delivery_batches` and `delivery_events` in the database): delivered live, re-sent from dead letters, "
+        "sent again after a restart, filtered out, dead-lettered, or delivered through another output. The "
+        "dashboard's **Connectors > Reconcile & audit** tab and `GET /api/audit/reconcile` check, per output:", "",
+        "```",
+        "owed = delivered + delivered via another output + filtered out + waiting in dead letters + in flight + unaccounted",
+        "```", "",
+        "where *owed* is every stored event since the output was first configured and **unaccounted must be 0**. "
+        "They also verify the per-event integrity chain and the delivery ledger (editing, deleting or reordering "
+        "records is detected), and cross-check the dead-letter files against the ledger.", "",
+        "**Audit report.** *Generate audit report* on that tab, or `GET /api/audit/report.pdf` and "
+        "`GET /api/audit/report.json`, produces a report with the verdict, chain-of-custody checks, the per-output "
+        "reconciliation, dead letters waiting, a timeline of outages, re-sends and re-routes, the log sources, and a "
+        "fingerprint: the SHA-256 of the JSON report plus the head hashes of both chains. Anyone holding the report "
+        "can later check that TRACELOG's ledgers still contain those heads.", "",
+        "**After a restart.** Events an output still owed (in its memory queue when TRACELOG stopped, or stored while "
+        "outputs were not running) have no outcome in the ledger; TRACELOG finds them at startup and sends them "
+        "again from the archive, so a crash cannot silently drop events on their way to a SIEM.", "",
+    ]
     parts += ["## Checking the connection", "",
               "- `GET /api/connectors` shows every input and output: counts, last message, errors, queue depth.",
               "- `POST /api/connectors/outputs/<name>/test` sends one OCSF event to that output and reports the "

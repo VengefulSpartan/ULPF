@@ -155,6 +155,43 @@ class Database:
             );
             """)
 
+            # 8. Delivery ledger: what happened to each stored event at each output (hash-chained batches)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS delivery_outputs (
+                output TEXT PRIMARY KEY,
+                type TEXT,
+                target TEXT,
+                first_seq INTEGER NOT NULL,
+                added_at TEXT NOT NULL
+            );
+            """)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS delivery_batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                output TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                trigger TEXT NOT NULL,
+                at TEXT NOT NULL,
+                count INTEGER NOT NULL,
+                detail TEXT,
+                events_hash TEXT NOT NULL,
+                prev_hash TEXT NOT NULL,
+                batch_hash TEXT NOT NULL
+            );
+            """)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS delivery_events (
+                batch_id INTEGER NOT NULL,
+                output TEXT NOT NULL,
+                sequence_num INTEGER NOT NULL,
+                event_uid TEXT,
+                outcome TEXT NOT NULL
+            );
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_delivery_events_output_seq "
+                           "ON delivery_events (output, sequence_num);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_delivery_events_batch ON delivery_events (batch_id);")
+
             # Migration: chain-of-custody metadata for streamed logs. raw_encoding
             # records how raw bytes were decoded, so raw_text.encode(raw_encoding)
             # always gives back the exact bytes received.

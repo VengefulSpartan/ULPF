@@ -275,6 +275,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 - `engine.py`: the ingest queue, disk spool for bursts, batch worker and output router, started and stopped with the API server.
 - `outputs/`: one sink per destination family (`http_sinks.py`, `stream_sinks.py`, `file_sinks.py`) sharing queues, retries, dead-letter files and filters from `base.py`; wire formats (CEF, LEEF 2.0, GELF, OTLP, RFC 5424) in `formats.py`.
 - `guides.py`: the per-vendor and per-destination setup guides shown on the Connectors page and generated into `docs/CONNECTORS.md`.
+- `backend/services/integrity/delivery_ledger.py`: the hash-chained record of every delivery outcome per output; `reconcile.py` computes the reconciliation and the audit report data; `audit_pdf.py` renders the PDF; `backend/api/audit.py` serves them.
 - `backend/services/ingestion/stream.py`: lossless batched ingestion for streamed logs with source auto-registration. `backend/services/normalization/ocsf_export.py`: the strict OCSF 1.1.0 event every output sends, plus a validator. `backend/api/receivers.py`: the HEC, OTLP and stream receivers. `backend/api/connectors.py`: status, test and flush endpoints.
 
 ### Frontend Operations Center (`frontend/`)
@@ -635,6 +636,10 @@ All endpoints return standard JSON responses and are fully documented interactiv
 | `GET` | `/api/connectors/dead-letters` | Undelivered events per output: count by kind, reasons, devices | None | `List[summary]` |
 | `GET` | `/api/connectors/dead-letters/{output}` | Latest dead-letter entries with full OCSF events | `limit` | `{"summary", "entries"}` |
 | `POST` | `/api/connectors/dead-letters/{output}/replay` | Re-sends dead letters (optionally through another output) | `to`, `kinds`, `limit`, `wait` | `{"state", "delivered", "remaining", ...}` |
+| `GET` | `/api/audit/reconcile` | Per-output reconciliation, both chains verified, delivery exceptions | `verify` | `{"all_accounted", "verdict", "outputs", ...}` |
+| `GET` | `/api/audit/report.pdf` | Downloadable audit report (PDF) | None | PDF attachment |
+| `GET` | `/api/audit/report.json` | The same report as JSON, with its SHA-256 fingerprint | None | JSON attachment |
+| `GET` | `/api/audit/delivery/verify` | Recomputes the delivery ledger's hash chain | None | `{"is_valid", "batches", "head_hash", "issues"}` |
 | `POST` | `/api/connectors/flush` | Waits until everything received is stored and handed to the outputs | `timeout` | `{"drained": true, ...}` |
 | `POST` | `/services/collector/event` | Splunk HEC receiver (Fluent Bit, Vector, Cribl, OTel `splunk_hec`) | HEC JSON events | `{"text": "Success", "code": 0}` |
 | `POST` | `/services/collector/raw` | Splunk HEC raw receiver, one log per line | Raw lines, `host`, `sourcetype` | `{"text": "Success", "code": 0}` |
@@ -684,7 +689,7 @@ To execute the comprehensive test suite:
 ```powershell
 python -m pytest -q
 ```
-**Expected Output**: every test passes (203 at the time of writing), including the connector tests that run real syslog sockets and mock Splunk, Elasticsearch, Loki, OTLP, Sentinel, Datadog, GELF and syslog/CEF/LEEF receivers.
+**Expected Output**: every test passes (213 at the time of writing), including the connector tests that run real syslog sockets and mock Splunk, Elasticsearch, Loki, OTLP, Sentinel, Datadog, GELF and syslog/CEF/LEEF receivers.
 
 ### 6. Docker Deployment
 ```bash
@@ -740,6 +745,8 @@ TRACELOG runs as the layer between the devices that produce perimeter logs and t
 **Delivery guarantees.** A burst larger than the ingest queue is spooled to disk and replayed, never dropped. A line that no pack recognises is still archived, chained and forwarded as an OCSF Base Event. Each output has its own queue, retries with exponential backoff and optional filters by OCSF class, severity and source, so a slow or broken SIEM never holds up ingestion or the other outputs.
 
 **Dead letters are re-sent, not just parked.** An event an output cannot deliver goes to `data/dead_letter/<output>.ndjson` with its reason, source device, attempt count and kind (`undeliverable`, `queue_full` or `rejected`). Undeliverable and queue-full events are re-sent automatically as soon as the destination answers again (with backoff while it stays down); rejected ones wait until the cause, such as a wrong token or index mapping, is fixed and someone presses **Re-send dead letters** on the Connectors page or calls `POST /api/connectors/dead-letters/<output>/replay`. A replay can go through a different output (for example to the NDJSON archive), resumes from its saved position after a crash so at most one batch is repeated, and never creates duplicates in Elasticsearch, OpenSearch or Wazuh because the event uid is the document id. Details: [docs/CONNECTORS.md](docs/CONNECTORS.md#dead-letters-events-a-destination-did-not-take-and-re-sending-them).
+
+**Proof that nothing was lost: reconciliation and the audit report.** Every outcome of every stored event at every output is written to a hash-chained delivery ledger: delivered (live, re-sent, or after a restart), filtered out by the output's filter, dead-lettered, or delivered through another output. The **Reconcile & audit** tab on the Connectors page checks, for each output, that *owed = delivered + filtered out + waiting in dead letters + in flight*, with **Unaccounted** required to be 0, and verifies both hash chains (the per-event integrity chain and the delivery ledger). Editing, deleting or reordering delivery records is detected. **Generate audit report** downloads a PDF (and the same data as JSON) with the verdict, the chain-of-custody checks, the per-output reconciliation, dead letters, a timeline of outages, re-sends and re-routes, the log sources, and a fingerprint: the report's SHA-256 plus the head hashes of both chains, so it can be checked against TRACELOG later. On restart, events an output still owed (queued in memory when TRACELOG stopped, or stored while outputs were not running) are found in the ledger and sent again from the archive automatically.
 
 **Live demo with a real sensor.** `docker compose -f docker-compose.devices.yml up` starts a Suricata sensor, a target web server and a traffic generator. TRACELOG tails `suricata-logs/eve.json` through the `suricata-eve` file input in the default configuration, so its alerts appear in the dashboard as Detection Findings as they happen.
 

@@ -124,6 +124,14 @@ class IngestionPipeline:
 
             conn.commit()
 
+        # Forward to the configured outputs like streamed logs (a no-op where the connector engine
+        # is not running; startup recovery then sends anything an output still owes).
+        try:
+            from backend.connectors.engine import engine
+            engine.route_normalized(normalized_dict, source_id)
+        except Exception:
+            logging.getLogger("ulpf.pipeline").exception("could not hand event %s to the outputs", event_id)
+
         return {
             "success": True,
             "raw_id": raw_id,
