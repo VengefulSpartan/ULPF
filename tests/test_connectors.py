@@ -456,3 +456,20 @@ def test_every_guide_names_a_real_pack_and_output_type():
     for d in DESTINATIONS:
         blocks = yaml.safe_load(d["config"])
         assert all(b["type"] in SINK_TYPES for b in blocks), d["key"]
+
+
+def test_forwarder_host_becomes_the_event_host_when_the_log_has_none(isolated_db):
+    from backend.connectors.outputs.formats import hostname_of
+    stored = StreamIngestor().ingest([
+        InboundRecord(raw=SURICATA.encode(), transport="hec", input_name="hec", peer_ip="10.0.0.5",
+                      hints={"hostname": "ids-sensor-9"}),
+        InboundRecord(raw=PAN_TRAFFIC.encode(), transport="hec", input_name="hec", peer_ip="10.0.0.5",
+                      hints={"hostname": "fluent-bit-relay"})])
+    assert hostname_of(stored[0].ocsf) == "ids-sensor-9"   # Splunk host / syslog HOSTNAME downstream
+    assert hostname_of(stored[1].ocsf) == "PA-3220"        # the device's own hostname wins over the relay's
+
+
+def test_syslog_notice_is_low_not_medium():
+    from backend.services.normalization.ocsf_normalizer import OCSFNormalizer
+    assert OCSFNormalizer.normalize_severity("notice") == (2, "Low")
+    assert OCSFNormalizer.normalize_severity("warning") == (3, "Medium")

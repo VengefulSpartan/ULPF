@@ -184,6 +184,10 @@ class StreamIngestor:
                                                   raw_hash, sequence_num=seq)
                 ev.id = event_id
                 ev.unmapped.setdefault("transport", rec.transport)
+                if rec.hints.get("hostname") and not ev.unmapped.get("device_hostname"):
+                    # e.g. host.name from an OTel Collector or `host` from a HEC forwarder; outputs use it as the
+                    # event's host (Splunk host, syslog HOSTNAME, GELF host) instead of the relay's address
+                    ev.unmapped["device_hostname"] = rec.hints["hostname"]
                 if rec.peer_ip:
                     ev.unmapped.setdefault("sender_ip", rec.peer_ip)
                 normalized = ev.model_dump()
