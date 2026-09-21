@@ -83,9 +83,10 @@ class OCSFNormalizer:
             return 5, "Critical"
         if any(x in s for x in ["err", "high", "severe"]):
             return 4, "High"
-        if any(x in s for x in ["warn", "med", "notice"]):
+        if any(x in s for x in ["warn", "med"]):
             return 3, "Medium"
-        if any(x in s for x in ["low", "debug"]):
+        # syslog "notice" is normal-but-significant: FortiGate, for one, logs every allowed session at it
+        if any(x in s for x in ["low", "notice"]):
             return 2, "Low"
         return 1, "Informational"
 
