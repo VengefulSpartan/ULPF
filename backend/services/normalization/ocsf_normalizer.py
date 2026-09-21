@@ -14,6 +14,9 @@ class OCSFNormalizer:
     - Class 3002: Authentication     (activity 1 = Logon, 2 = Logoff)
     - Class 2004: Detection Finding  (activity 1 = Create); replaces Security Finding
       (2001), which OCSF deprecated in 1.1.0.
+    - Class 0:    Base Event         (activity 99 = Other) for lines that carry no
+      network, identity or detection semantics (system messages, unparseable text),
+      so they are never mislabelled as Network Activity.
 
     Vendor packs may pass hints in the parsed dict: ``_ocsf_class``,
     ``_activity_id`` and ``_activity_name`` override the heuristics below.
@@ -23,6 +26,7 @@ class OCSFNormalizer:
         4001: ("Network Activity", 4, "Network Activity", 6, "Traffic"),
         3002: ("Authentication", 3, "Identity & Access Management", 1, "Logon"),
         2004: ("Detection Finding", 2, "Findings", 1, "Create"),
+        0: ("Base Event", 0, "Uncategorized", 99, "Other"),
     }
 
     # Field aliases
@@ -175,8 +179,10 @@ class OCSFNormalizer:
             class_uid = 2004
         elif is_auth:
             class_uid = 3002
-        else:
+        elif cls.find_first(data, cls.SRC_IP_ALIASES) or cls.find_first(data, cls.DST_IP_ALIASES):
             class_uid = 4001
+        else:
+            class_uid = 0
         class_name, category_uid, category_name, activity_id, activity_name = cls.CLASS_INFO[class_uid]
         if isinstance(data.get("_activity_id"), int):
             activity_id = data["_activity_id"]
@@ -268,6 +274,8 @@ class OCSFNormalizer:
         for k, v in data.items():
             if k not in mapped_keys and not k.startswith("_"):
                 unmapped[k] = v
+        if data.get("_pack"):
+            unmapped["parser_pack"] = data["_pack"]
 
         # Metadata
         metadata = Metadata(

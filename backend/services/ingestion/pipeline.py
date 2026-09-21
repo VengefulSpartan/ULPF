@@ -6,7 +6,7 @@ from datetime import datetime
 from backend.services.storage.db import db
 from backend.services.integrity.hasher import Hasher
 from backend.services.integrity.ledger import IntegrityLedger
-from backend.services.parsing.detector import FormatDetector
+from backend.services.parsing.dispatch import parse_log
 from backend.services.normalization.ocsf_normalizer import OCSFNormalizer
 from backend.models.event import OCSFEvent, RawLogRecord
 
@@ -38,7 +38,7 @@ class IngestionPipeline:
         raw_hash = Hasher.hash_raw_bytes(raw_text)
 
         # 1. Parse log
-        format_detected, parsed_data = FormatDetector.detect_and_parse(raw_text)
+        format_detected, parsed_data = parse_log(raw_text)
 
         with db.get_connection() as conn:
             cursor = conn.cursor()
