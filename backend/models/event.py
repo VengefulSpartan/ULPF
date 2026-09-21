@@ -47,12 +47,13 @@ class Finding(BaseModel):
 
 class OCSFEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    class_uid: int = 4001 # 4001: Network Activity, 3001: Authentication, 2001: Security Finding
+    class_uid: int = 4001 # 4001: Network Activity, 3002: Authentication, 2004: Detection Finding
     class_name: str = "Network Activity"
     category_uid: int = 4 # 4: Network, 3: IAM, 2: Findings
     category_name: str = "Network Activity"
-    activity_id: int = 1 # 1: Traffic, 2: Logon, 3: Detection
+    activity_id: int = 6 # class-specific; Network Activity 6 = Traffic
     activity_name: str = "Traffic"
+    type_uid: int = 400106 # OCSF required: class_uid * 100 + activity_id
     severity_id: int = 1 # 1: Info, 2: Low, 3: Medium, 4: High, 5: Critical
     severity: str = "Informational"
     time: str = Field(default_factory=lambda: datetime.utcnow().isoformat())

@@ -11,8 +11,8 @@ def render_schema():
         ULPF normalizes heterogeneous perimeter telemetry into a standardized, analytics-ready OCSF v1.1.0 representation.
         Events map to three primary perimeter security classes:
         - **Class 4001**: Network Activity (Traffic flows, connections, ACL rules)
-        - **Class 3001**: Authentication (VPN logons, user sessions, MFA verification)
-        - **Class 2001**: Security Finding (IDS/IPS signature alerts, exploit detections)
+        - **Class 3002**: Authentication (VPN logons, user sessions, MFA verification)
+        - **Class 2004**: Detection Finding (IDS/IPS signature alerts, exploit detections)
         """
     )
 
@@ -22,8 +22,8 @@ def render_schema():
         st.markdown("##### Standardized OCSF Classes")
         classes_data = [
             {"Class UID": 4001, "Class Name": "Network Activity", "Category UID": 4, "Category": "Network Activity", "Primary Appliances": "Palo Alto NGFW, Cisco ASA, pfSense, FortiOS"},
-            {"Class UID": 3001, "Class Name": "Authentication", "Category UID": 3, "Category": "Identity & Access Management", "Primary Appliances": "FortiGate SSL-VPN, Cisco AnyConnect, RADIUS"},
-            {"Class UID": 2001, "Class Name": "Security Finding", "Category UID": 2, "Category": "Findings", "Primary Appliances": "Suricata IDS, Snort, Zeek, Threat Prevention"}
+            {"Class UID": 3002, "Class Name": "Authentication", "Category UID": 3, "Category": "Identity & Access Management", "Primary Appliances": "FortiGate SSL-VPN, Cisco AnyConnect, RADIUS"},
+            {"Class UID": 2004, "Class Name": "Detection Finding", "Category UID": 2, "Category": "Findings", "Primary Appliances": "Suricata IDS, Snort, Zeek, Threat Prevention"}
         ]
         st.dataframe(pd.DataFrame(classes_data), use_container_width=True, hide_index=True)
 
@@ -43,7 +43,7 @@ def render_schema():
             {"Field Name": "connection_info.protocol_name", "Type": "string", "Required": "No", "Description": "Transport protocol (TCP, UDP, ICMP)"},
             {"Field Name": "disposition", "Type": "string", "Required": "No", "Description": "Normalized action: 'allowed', 'denied', 'dropped', 'alert'"},
             {"Field Name": "user.name", "Type": "string", "Required": "No", "Description": "Identity or username associated with the event"},
-            {"Field Name": "finding.title", "Type": "string", "Required": "No", "Description": "Signature or threat name for Security Finding"},
+            {"Field Name": "finding.title", "Type": "string", "Required": "No", "Description": "Signature or threat name for Detection Finding"},
             {"Field Name": "unmapped", "Type": "object (key-value)", "Required": "No", "Description": "Preserved vendor-specific fields outside schema"}
         ]
         st.dataframe(pd.DataFrame(fields_data), use_container_width=True, hide_index=True)
@@ -61,8 +61,9 @@ def render_schema():
             "class_name": "Network Activity",
             "category_uid": 4,
             "category_name": "Network Activity",
-            "activity_id": 1,
+            "activity_id": 6,
             "activity_name": "Traffic",
+            "type_uid": 400106,
             "severity_id": 3,
             "severity": "Medium",
             "time": "2026-09-20T14:00:32Z",

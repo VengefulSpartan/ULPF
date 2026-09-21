@@ -55,7 +55,7 @@ def test_ocsf_normalization_auth():
         product="FortiGate"
     )
 
-    assert event.class_uid == 3001
+    assert event.class_uid == 3002
     assert event.class_name == "Authentication"
     assert event.user.name == "admin_alice"
     assert event.status == "success"
@@ -76,8 +76,8 @@ def test_ocsf_normalization_finding():
         product="Suricata IDS"
     )
 
-    assert event.class_uid == 2001
-    assert event.class_name == "Security Finding"
+    assert event.class_uid == 2004
+    assert event.class_name == "Detection Finding"
     assert event.finding.title == "ET SCAN Nmap Scripting Engine"
     assert event.severity_id == 4
     assert event.severity == "High"

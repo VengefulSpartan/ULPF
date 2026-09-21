@@ -20,7 +20,7 @@ def render_explorer():
         selected_sev = st.selectbox("Severity", ["All", "Critical", "High", "Medium", "Low", "Informational"])
         sev_filter = None if selected_sev == "All" else selected_sev
     with c_cls:
-        selected_cls = st.selectbox("OCSF Class", ["All", "Network Activity", "Authentication", "Security Finding"])
+        selected_cls = st.selectbox("OCSF Class", ["All", "Network Activity", "Authentication", "Detection Finding"])
         cls_filter = None if selected_cls == "All" else selected_cls
 
     # Query Events
