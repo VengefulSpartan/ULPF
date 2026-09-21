@@ -238,3 +238,24 @@ class APIClient:
             pass
         from backend.api.correlation import run_rca, RunCorrelationRequest
         return run_rca(RunCorrelationRequest(**payload)).model_dump()
+
+    # ---- connectors (live only: inputs and outputs run inside the API server) ----------------
+    @classmethod
+    def get_connectors(cls) -> Optional[Dict[str, Any]]:
+        """Live input/output status from the running server, or None when it is not reachable."""
+        try:
+            r = requests.get(f"{BASE_URL}/connectors", timeout=3.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def test_output(cls, name: str) -> Dict[str, Any]:
+        try:
+            r = requests.post(f"{BASE_URL}/connectors/outputs/{name}/test", timeout=20.0)
+            return r.json() if r.headers.get("content-type", "").startswith("application/json") else \
+                {"ok": False, "detail": r.text[:300]}
+        except Exception as exc:
+            return {"ok": False, "detail": f"API server not reachable: {exc}"}

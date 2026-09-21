@@ -10,6 +10,9 @@ tracelog:
     http:
       enabled: true          # Splunk HEC (/services/collector/*), OTLP (/v1/logs), /api/ingest/stream
       tokens: []             # add tokens (e.g. ["${TRACELOG_HEC_TOKEN}"]) to require authentication
+    files:
+      # The live Suricata sensor from docker-compose.devices.yml writes here; nothing happens until it exists.
+      - {name: suricata-eve, paths: ["suricata-logs/eve.json"], start_at: beginning}
 
   # Optional: name devices instead of auto-registering them by sender address.
   sources: []

@@ -62,7 +62,7 @@ with st.sidebar:
             "🛡️  Integrity & Lineage",
             "🧬  Correlation & RCA",
             "📐  Schema Explorer",
-            "🔗  Integrations",
+            "🔗  Connectors",
             "⚙️  Settings"
         ],
         label_visibility="collapsed"
@@ -111,7 +111,7 @@ elif "Correlation" in page:
     render_correlation()
 elif "Schema Explorer" in page:
     render_schema()
-elif "Integrations" in page:
+elif "Connectors" in page:
     render_integrations()
 elif "Settings" in page:
     render_settings()

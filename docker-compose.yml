@@ -5,13 +5,32 @@ services:
     build: .
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      - "8000:8000"          # API, dashboard backend, Splunk HEC and OTLP/HTTP receivers
+      - "514:5514/udp"       # syslog from devices (standard port on the host, unprivileged in the container)
+      - "514:5514/tcp"
+      - "5514:5514/tcp"      # for devices that cannot use TCP ports below 1025 (Cisco ASA)
+      - "6514:6514/tcp"      # syslog over TLS, once a syslog-tls input is enabled in config/tracelog.yaml
     volumes:
       - ulpf-data:/app/data
+      - ./config:/app/config:ro              # edit connectors without rebuilding the image
+      - ./suricata-logs:/app/suricata-logs:ro # live sensor from docker-compose.devices.yml
     environment:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=8000
       - ENVIRONMENT=demo
+      - TRACELOG_CONFIG=/app/config/tracelog.yaml
+      # Secrets referenced as ${VAR} in config/tracelog.yaml; set them in .env (never committed).
+      - TRACELOG_HEC_TOKEN=${TRACELOG_HEC_TOKEN:-}
+      - SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN:-}
+      - ELASTIC_API_KEY=${ELASTIC_API_KEY:-}
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD:-}
+      - WAZUH_INDEXER_PASSWORD=${WAZUH_INDEXER_PASSWORD:-}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
+      - DD_API_KEY=${DD_API_KEY:-}
+      - NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY:-}
+      - SOAR_TOKEN=${SOAR_TOKEN:-}
     restart: unless-stopped
 
   ulpf-frontend:

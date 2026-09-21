@@ -2,8 +2,9 @@
 Connector configuration (inputs, source mapping, outputs), loaded from YAML.
 
 The file path comes from TRACELOG_CONFIG (default: config/tracelog.yaml).
-Any ${VAR} or ${VAR:-default} in the file is replaced from the environment,
-so tokens and passwords never have to be written into the file itself.
+Any ${VAR} or ${VAR:-default} in the file is replaced from the environment
+(or from a .env file, which the environment overrides), so tokens and
+passwords never have to be written into the file itself.
 With no file present TRACELOG starts with no listeners and no outputs; the
 HTTP receivers (HEC, OTLP, NDJSON) are always mounted on the API port.
 """
@@ -13,18 +14,44 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 _ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 
-def _expand(value: Any) -> Any:
+def read_dotenv(path: str = ".env") -> Dict[str, str]:
+    """KEY=VALUE pairs from a .env file (quotes and trailing # comments removed). Missing file: {}."""
+    values: Dict[str, str] = {}
+    p = Path(path)
+    if not p.is_file():
+        return values
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key, val = key.strip().removeprefix("export ").strip(), val.strip()
+        if val[:1] in ("'", '"') and val[:1] in val[1:]:
+            val = val[1:val.index(val[0], 1)]
+        else:
+            val = re.split(r"\s+#", val, 1)[0].strip()
+        values[key] = val
+    return values
+
+
+def _lookup(name: str, default: Optional[str], env: Dict[str, str]) -> str:
+    # Shell semantics: ${VAR:-default} uses the default when VAR is unset *or empty*.
+    return os.environ.get(name) or env.get(name) or (default or "")
+
+
+def _expand(value: Any, env: Optional[Dict[str, str]] = None) -> Any:
+    env = {} if env is None else env
     if isinstance(value, str):
-        return _ENV.sub(lambda m: os.environ.get(m.group(1), m.group(2) or ""), value)
+        return _ENV.sub(lambda m: _lookup(m.group(1), m.group(2), env), value)
     if isinstance(value, list):
-        return [_expand(v) for v in value]
+        return [_expand(v, env) for v in value]
     if isinstance(value, dict):
-        return {k: _expand(v) for k, v in value.items()}
+        return {k: _expand(v, env) for k, v in value.items()}
     return value
 
 
@@ -42,6 +69,12 @@ class SyslogInput(BaseModel):
 class HttpInput(BaseModel):
     enabled: bool = True
     tokens: List[str] = Field(default_factory=list)   # empty = no authentication (lab use only)
+
+    @field_validator("tokens")
+    @classmethod
+    def _drop_blank_tokens(cls, v: List[str]) -> List[str]:
+        # "${TRACELOG_HEC_TOKEN}" with the variable unset must not become an empty, guessable token
+        return [t for t in v if t and t.strip()]
 
 
 class FileInput(BaseModel):
@@ -124,4 +157,6 @@ def load_config(path: Optional[str] = None) -> TracelogConfig:
         extra = {k: v for k, v in o.items() if k not in Output.model_fields}
         outputs.append({**common, "settings": {**extra, **(o.get("settings") or {})}})
     raw["outputs"] = outputs
-    return TracelogConfig.model_validate(_expand(raw))
+    # Values from the environment win; a .env file beside the working directory fills the gaps, so
+    # secrets work the same with `python run_app.py` as with docker compose.
+    return TracelogConfig.model_validate(_expand(raw, read_dotenv(os.environ.get("TRACELOG_DOTENV", ".env"))))

@@ -92,8 +92,9 @@ class SourceResolver:
         return None
 
     def resolve(self, conn, rec: InboundRecord, parsed: Dict[str, Any], fmt: str) -> Tuple[str, str]:
-        hostname = rec.hints.get("hostname") or parsed.get("device_hostname") or \
-            (parsed.get("syslog") or {}).get("hostname")
+        # The hostname inside the log beats one a forwarder attached (often the forwarder's own host).
+        hostname = parsed.get("device_hostname") or (parsed.get("syslog") or {}).get("hostname") or \
+            rec.hints.get("hostname")
         static = self._static_match(rec, hostname)
         vendor = (static or {}).get("vendor") or rec.hints.get("vendor") or parsed.get("vendor") or "Unknown"
         product = (static or {}).get("product") or rec.hints.get("product") or parsed.get("product") or "Syslog device"

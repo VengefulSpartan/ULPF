@@ -201,6 +201,30 @@ def test_otlp_json_receiver(api):
     assert eng.flush(10) and eng.metrics["ingested"] == 2
 
 
+def test_receivers_accept_gzip_wrapped_events_and_forwarder_envelopes(api, isolated_db):
+    import gzip
+    client, eng = api
+    # OpenTelemetry Collector gzips by default
+    payload = {"resourceLogs": [{"scopeLogs": [{"logRecords": [{"body": {"stringValue": FORTI_TRAFFIC}}]}]}]}
+    r = client.post("/v1/logs", content=gzip.compress(json.dumps(payload).encode()),
+                    headers={"Content-Type": "application/json", "Content-Encoding": "gzip"})
+    assert r.status_code == 200
+    # Cribl-style HEC event carrying the original line in _raw, on the Splunk forwarder path
+    r = client.post("/services/collector/event/1.0", content=json.dumps({"event": {"_raw": ASA_DENY}}))
+    assert r.json()["code"] == 0
+    # Logstash http output (format => json_batch): the device line is in `message`, the device in host.name
+    batch = [{"message": PAN_TRAFFIC.replace("PA-3220", "PA-EDGE"), "host": {"name": "relay-1"}, "@version": "1"},
+             {"message": SURICATA, "host": "ids-sensor-2"}]
+    r = client.post("/api/ingest/stream?message_field=message", json=batch)
+    assert r.json() == {"accepted": 2}
+    assert eng.flush(10) and eng.metrics["ingested"] == 4
+    with isolated_db.get_connection() as conn:
+        raws = {r["raw_text"] for r in conn.execute("SELECT raw_text FROM raw_logs")}
+        names = {r["name"] for r in conn.execute("SELECT name FROM sources")}
+    assert {FORTI_TRAFFIC, ASA_DENY, SURICATA} <= raws           # the original lines, not the envelopes
+    assert "OISF Suricata (ids-sensor-2)" in names and "Palo Alto Networks PAN-OS (PA-EDGE)" in names
+
+
 def test_ndjson_stream_endpoint_and_connector_status(api):
     client, eng = api
     r = client.post("/api/ingest/stream?source=Lab%20Firewall", content="\n".join(SAMPLE_LINES).encode())
@@ -384,6 +408,22 @@ def test_env_vars_are_expanded_in_config(tmp_path, monkeypatch):
     assert cfg.outputs[0].settings["token"] == "from-env" and cfg.outputs[0].batch_size == 10
 
 
+def test_dotenv_fills_gaps_env_wins_and_blank_tokens_are_dropped(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text('# secrets\nSPLUNK_T="from-dotenv"   # quoted\nexport DD=abc # comment\nEMPTY_T=""\nSHADOW=file\n')
+    monkeypatch.setenv("TRACELOG_DOTENV", str(env))
+    monkeypatch.setenv("SHADOW", "process-env")
+    monkeypatch.setenv("BLANK", "")
+    p = tmp_path / "c.yaml"
+    p.write_text("tracelog:\n  inputs:\n    http: {tokens: ['${EMPTY_T}', '${UNSET_T}']}\n  outputs:\n"
+                 "    - {name: s, type: splunk_hec, url: 'https://x', token: '${SPLUNK_T}', index: '${SHADOW}',"
+                 " source: '${BLANK:-fallback}', sourcetype: '${DD}'}\n")
+    cfg = load_config(str(p))
+    s = cfg.outputs[0].settings
+    assert (s["token"], s["index"], s["source"], s["sourcetype"]) == ("from-dotenv", "process-env", "fallback", "abc")
+    assert cfg.inputs.http.tokens == []  # unset token variables must not turn into an empty, accepted token
+
+
 def test_devices_behind_a_relay_are_told_apart_by_hostname(isolated_db):
     """rsyslog / Fluent Bit / Cribl relays: one sender address, several devices."""
     a = PAN_TRAFFIC.replace("PA-3220", "PA-DC1")
@@ -392,3 +432,27 @@ def test_devices_behind_a_relay_are_told_apart_by_hostname(isolated_db):
     assert [s.source_name for s in stored] == ["Palo Alto Networks PAN-OS (PA-DC1)",
                                                "Palo Alto Networks PAN-OS (PA-DC2)",
                                                "Palo Alto Networks PAN-OS (10.9.9.9)"]  # ambiguous: keep the relay
+
+
+def test_connector_docs_are_generated_from_the_guides():
+    """docs/CONNECTORS.md must match backend/connectors/guides.py (run scripts/generate_connector_docs.py)."""
+    import importlib.util
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("gen", root / "scripts" / "generate_connector_docs.py")
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    assert (root / "docs" / "CONNECTORS.md").read_text(encoding="utf-8") == gen.build()
+    assert "{host}" not in gen.build() and "{syslog_port}" not in gen.build()
+
+
+def test_every_guide_names_a_real_pack_and_output_type():
+    from backend.connectors.guides import DESTINATIONS, SOURCES
+    from backend.connectors.outputs import SINK_TYPES
+    from backend.services.vendors import SUPPORTED_SOURCES
+    packs = {s["pack"] for s in SUPPORTED_SOURCES}
+    assert all(s["pack"] in packs for s in SOURCES)
+    import yaml
+    for d in DESTINATIONS:
+        blocks = yaml.safe_load(d["config"])
+        assert all(b["type"] in SINK_TYPES for b in blocks), d["key"]
