@@ -1,0 +1,25 @@
+parser_id: draft_cisco_asa_001
+version: 1.0.0
+status: confirmed_active
+template_mined: '<*> %ASA-6-302013: Built <*> connection <*> for <*>:<*>/<*> to <*>:<*>/<*>'
+field_mappings:
+- source_var: var_0
+  ocsf_field: src_endpoint.ip
+  inferred_type: ipv4
+  confidence: 0.98
+- source_var: var_1
+  ocsf_field: src_endpoint.port
+  inferred_type: port
+  confidence: 0.95
+- source_var: var_2
+  ocsf_field: dst_endpoint.ip
+  inferred_type: ipv4
+  confidence: 0.98
+- source_var: var_3
+  ocsf_field: dst_endpoint.port
+  inferred_type: port
+  confidence: 0.95
+- source_var: var_4
+  ocsf_field: disposition
+  inferred_type: action
+  confidence: 0.89

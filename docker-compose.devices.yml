@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Target Web Application (Nginx)
+  target-web:
+    image: nginx:alpine
+    container_name: ulpf-target-web
+    ports:
+      - "8080:80"
+    networks:
+      - ulpf-security-net
+
+  # Real Open-Source Suricata IDS Device
+  suricata:
+    image: jasonish/suricata:latest
+    container_name: ulpf-suricata
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    volumes:
+      - ./suricata-logs:/var/log/suricata
+    environment:
+      - SURICATA_OPTIONS=-i eth0
+    depends_on:
+      - target-web
+
+  # Real Network Traffic Generator (Nmap, Curl web attacks)
+  traffic-generator:
+    image: alpine:latest
+    container_name: ulpf-traffic-generator
+    command: >
+      sh -c "
+        apk add --no-cache curl nmap &&
+        echo 'Starting attack simulation...' &&
+        sleep 5 &&
+        echo '[+] Executing Nmap Port Scan...' &&
+        nmap -sT -p 80,443,22 target-web || true &&
+        sleep 3 &&
+        echo '[+] Executing Web Exploit Probes...' &&
+        curl -s -A 'Nikto/2.1.6' http://target-web:80/ || true &&
+        curl -s 'http://target-web:80/../../etc/passwd' || true &&
+        curl -s 'http://target-web:80/?id=1%27%20OR%20%271%27=%271' || true &&
+        echo '[+] Attack simulation completed.'
+      "
+    networks:
+      - ulpf-security-net
+    depends_on:
+      - target-web
+
+networks:
+  ulpf-security-net:
+    driver: bridge

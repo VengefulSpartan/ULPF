@@ -1,0 +1,101 @@
+[
+  {
+    "class_uid": 4001,
+    "class_name": "Network Activity",
+    "category_uid": 4,
+    "category_name": "Network Activity",
+    "severity_id": 4,
+    "activity_id": 1,
+    "activity_name": "Traffic Log",
+    "time": 1726423200,
+    "disposition": "BLOCK",
+    "metadata": {
+      "version": "1.1.0",
+      "product": { "vendor_name": "CheckPoint", "name": "Firewall-1" }
+    },
+    "raw_ref": {
+      "uuid": "evt-001-firewall-block",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "archive_path": "raw/2026-09-15/evt-001-firewall-block"
+    },
+    "parser_id": "plugin_fw",
+    "parser_version": "1.0.0",
+    "src_endpoint": { "ip": "192.168.1.50", "port": 54321 },
+    "dst_endpoint": { "ip": "10.0.0.5", "port": 80 },
+    "user": { "name": "attacker_x" }
+  },
+  {
+    "class_uid": 2001,
+    "class_name": "Security Finding",
+    "category_uid": 2,
+    "category_name": "Findings",
+    "severity_id": 5,
+    "activity_id": 1,
+    "activity_name": "IDS Alert",
+    "time": 1726423230,
+    "disposition": "ALERT",
+    "metadata": {
+      "version": "1.1.0",
+      "product": { "vendor_name": "Suricata", "name": "IDS" }
+    },
+    "raw_ref": {
+      "uuid": "evt-002-ids-alert",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "archive_path": "raw/2026-09-15/evt-002-ids-alert"
+    },
+    "parser_id": "plugin_ids",
+    "parser_version": "1.0.0",
+    "src_endpoint": { "ip": "192.168.1.50", "port": 54321 },
+    "dst_endpoint": { "ip": "10.0.0.5", "port": 80 },
+    "user": { "name": "attacker_x" }
+  },
+  {
+    "class_uid": 3002,
+    "class_name": "Authentication",
+    "category_uid": 3,
+    "category_name": "Identity & Access",
+    "severity_id": 3,
+    "activity_id": 2,
+    "activity_name": "Logon Attempt",
+    "time": 1726423260,
+    "disposition": "FAILURE",
+    "metadata": {
+      "version": "1.1.0",
+      "product": { "vendor_name": "Linux", "name": "PAM" }
+    },
+    "raw_ref": {
+      "uuid": "evt-003-failed-auth",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "archive_path": "raw/2026-09-15/evt-003-failed-auth"
+    },
+    "parser_id": "plugin_pam",
+    "parser_version": "1.0.0",
+    "src_endpoint": { "ip": "192.168.1.50", "port": 42100 },
+    "user": { "name": "attacker_x" }
+  },
+  {
+    "class_uid": 1001,
+    "class_name": "System Activity",
+    "category_uid": 1,
+    "category_name": "System",
+    "severity_id": 2,
+    "activity_id": 1,
+    "activity_name": "Process Execution",
+    "time": 1726423290,
+    "disposition": "SUCCESS",
+    "metadata": {
+      "version": "1.1.0",
+      "product": { "vendor_name": "Windows", "name": "Security Log" }
+    },
+    "raw_ref": {
+      "uuid": "evt-004-process-spawn",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "archive_path": "raw/2026-09-15/evt-004-process-spawn"
+    },
+    "parser_id": "plugin_win_event",
+    "parser_version": "1.0.0",
+    "device": { "hostname": "server-01" },
+    "user": { "name": "attacker_x" },
+    "process": { "name": "cmd.exe" }
+  }
+]

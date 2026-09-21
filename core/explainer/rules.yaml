@@ -1,0 +1,47 @@
+rules:
+  # Network Activity (Class 4001)
+  - class_uid: 4001
+    activity_id: 1
+    disposition: "BLOCK"
+    intent: "policy_violation"
+    template: "Perimeter firewall blocked an inbound network traffic attempt from {src_ip}:{src_port} to destination {dst_ip}:{dst_port}."
+
+  - class_uid: 4001
+    activity_id: 1
+    disposition: "ALLOW"
+    intent: "reconnaissance"
+    template: "Network traffic from source {src_ip}:{src_port} was allowed through to destination {dst_ip}:{dst_port}."
+
+  # Security Finding / IDS Alert (Class 2001)
+  - class_uid: 2001
+    activity_id: 1
+    disposition: "ALERT"
+    intent: "reconnaissance"
+    template: "Intrusion Detection System (IDS) flagged suspicious activity originating from {src_ip} targeting {dst_ip}."
+
+  # Authentication / Logon Attempt (Class 3002)
+  - class_uid: 3002
+    activity_id: 2
+    disposition: "FAILURE"
+    intent: "credential_attack"
+    template: "Failed authentication attempt for user '{user_name}' originating from host IP {src_ip}."
+
+  - class_uid: 3002
+    activity_id: 2
+    disposition: "SUCCESS"
+    intent: "operational_noise"
+    template: "User '{user_name}' successfully authenticated from host IP {src_ip}."
+
+  # System Activity / Process Execution (Class 1001)
+  - class_uid: 1001
+    activity_id: 1
+    disposition: "SUCCESS"
+    intent: "exfiltration_attempt"
+    template: "Process '{process_name}' was spawned by user '{user_name}' on device '{device_hostname}'."
+
+  # Web / HTTP Proxy Activity (Class 4002)
+  - class_uid: 4002
+    activity_id: 1
+    disposition: "DENY"
+    intent: "policy_violation"
+    template: "Web proxy denied access to URL '{url}' requested by user '{user_name}' from {src_ip}."

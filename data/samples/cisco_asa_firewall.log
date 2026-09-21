@@ -1,0 +1,4 @@
+<166>Sep 20 14:00:15 ciscoasa %ASA-6-302013: Built inbound TCP connection 88123 for outside:198.51.100.22/51200 to inside:10.0.1.15/443
+<166>Sep 20 14:00:30 ciscoasa %ASA-6-302013: Built inside TCP connection 88124 for inside:10.0.1.15/49152 to dmz:192.168.1.50/445
+<166>Sep 20 14:01:10 ciscoasa %ASA-4-106023: Deny tcp src outside:203.0.113.88/44321 dst inside:192.168.1.10/22 by access-group "OUTSIDE_IN"
+<166>Sep 20 14:02:00 ciscoasa %ASA-6-302014: Teardown TCP connection 88123 for outside:198.51.100.22/51200 to inside:10.0.1.15/443 duration 0:01:45 bytes 4821
