@@ -20,6 +20,16 @@ class GenerateParserRequest(BaseModel):
 class TestParserRequest(BaseModel):
     sample_logs: List[str]
 
+def _rule_view(r) -> dict:
+    """A learned parser's spec shown as the rule model the registry lists (its fields as mappings)."""
+    rule = json.loads(r["rule_json"])
+    if r["format_type"] != "learned":
+        return rule
+    return {"format_type": "learned", "delimiter": rule.get("delimiter"),
+            "mappings": [{"source_field": s["label"], "target_field": s["role"]}
+                         for s in rule.get("slots", []) if s.get("role")]}
+
+
 @router.get("", response_model=List[ParserCandidate])
 def list_parsers():
     with db.get_connection() as conn:
@@ -28,7 +38,7 @@ def list_parsers():
         rows = cursor.fetchall()
         result = []
         for r in rows:
-            rule_dict = json.loads(r["rule_json"])
+            rule_dict = _rule_view(r)
             val_dict = json.loads(r["validation_json"]) if r["validation_json"] else None
             result.append(ParserCandidate(
                 id=r["id"],
@@ -91,6 +101,9 @@ def test_parser(parser_id: str, req: TestParserRequest):
         if not r:
             raise HTTPException(status_code=404, detail="Parser not found")
 
+        if r["format_type"] == "learned":
+            raise HTTPException(status_code=400, detail="Learned parsers are re-tested with PUT /api/formats/parsers/"
+                                                        f"{parser_id}")
         rule_dict = json.loads(r["rule_json"])
         candidate = ParserCandidate(
             id=r["id"],
@@ -134,6 +147,13 @@ def approve_parser(parser_id: str):
         if not r:
             raise HTTPException(status_code=404, detail="Parser not found")
 
+        if r["format_type"] == "learned":
+            raise HTTPException(
+                status_code=400,
+                detail="Learned parsers are approved from Parser Studio's New log formats tab "
+                       f"(POST /api/formats/parsers/{parser_id}/approve), where fields that rest on position "
+                       "alone must be confirmed by name."
+            )
         if not bool(r["tested"]):
             raise HTTPException(
                 status_code=400,
@@ -185,6 +205,12 @@ def approve_parser(parser_id: str):
 def reject_parser(parser_id: str):
     with db.get_connection() as conn:
         cursor = conn.cursor()
+        r = cursor.execute("SELECT format_type FROM parsers WHERE id = ?", (parser_id,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="Parser not found")
+        if r["format_type"] == "learned":
+            from backend.services.parser_generation.workflow import reject
+            reject(parser_id)
         cursor.execute("UPDATE parsers SET status = 'rejected', updated_at = datetime('now') WHERE id = ?", (parser_id,))
         conn.commit()
         cursor.execute("SELECT * FROM parsers WHERE id = ?", (parser_id,))
@@ -197,7 +223,7 @@ def reject_parser(parser_id: str):
             format_type=up["format_type"],
             description=up["description"] or "",
             target_ocsf_class=up["target_ocsf_class"],
-            rule=json.loads(up["rule_json"]),
+            rule=_rule_view(up),
             status=up["status"],
             created_at=up["created_at"],
             updated_at=up["updated_at"],

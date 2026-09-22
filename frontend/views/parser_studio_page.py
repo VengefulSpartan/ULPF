@@ -2,12 +2,17 @@ import streamlit as st
 import json
 import pandas as pd
 from frontend.api_client import APIClient
+from frontend.views.new_formats_panel import render_new_formats
 
 def render_parser_studio():
     st.markdown("## Parser Studio (Zero-Touch Parser Generation)")
     st.caption("USP 1: Autonomous parser inference, candidate generation, multi-sample validation, and approval workflow")
 
-    tab_gen, tab_list = st.tabs(["⚡ Generate & Test Candidate Parser", "📂 Parser Registry & Approval"])
+    tab_new, tab_gen, tab_list = st.tabs(["🆕 New log formats", "⚡ Generate & Test Candidate Parser",
+                                          "📂 Parser Registry & Approval"])
+
+    with tab_new:
+        render_new_formats()
 
     # 1. Generate & Test Tab
     with tab_gen:

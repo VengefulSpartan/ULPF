@@ -99,7 +99,8 @@ class APIClient:
         except Exception:
             pass
         from backend.api.events import list_events
-        return list_events(search=search, source_id=source_id, severity=severity, class_name=class_name, limit=limit, offset=offset)
+        return list_events(search=search, source_id=source_id, severity=severity, class_name=class_name, ip=None,
+                           limit=limit, offset=offset, include_superseded=False)
 
     @classmethod
     def get_event_detail(cls, event_id: str) -> Dict[str, Any]:
@@ -322,3 +323,84 @@ class APIClient:
             return {"ok": True, "data": r.content, "filename": name}
         except Exception as exc:
             return {"ok": False, "error": f"API server not reachable: {exc}"}
+
+    # ---- new log formats and learned parsers ------------------------------------------------
+    # Served by the API when it runs; otherwise the same services are called in-process (they only need the DB).
+    @classmethod
+    def _formats_call(cls, method: str, path: str, local, json_body: Optional[Dict[str, Any]] = None,
+                      params: Optional[Dict[str, Any]] = None, timeout: float = 30.0) -> Any:
+        try:
+            r = requests.request(method, f"{BASE_URL}/formats{path}", json=json_body, params=params, timeout=timeout)
+        except Exception:
+            from backend.services.parser_generation.workflow import WorkflowError
+            try:
+                return local()
+            except WorkflowError as exc:
+                return {"error": str(exc), **exc.detail}
+            except ValueError as exc:
+                return {"error": str(exc)}
+        if r.status_code == 200:
+            return r.json()
+        try:
+            detail = r.json().get("detail")
+        except Exception:
+            detail = r.text[:300]
+        if isinstance(detail, dict):
+            return {"error": detail.get("message", str(detail)), **detail}
+        return {"error": detail or f"HTTP {r.status_code}"}
+
+    @classmethod
+    def list_formats(cls, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        def local():
+            from backend.services.parsing.formats import list_formats
+            from backend.services.storage import db as db_module
+            with db_module.db.get_connection() as conn:
+                return list_formats(conn, status)
+        out = cls._formats_call("GET", "", local, params={"status": status} if status else None, timeout=5.0)
+        return out if isinstance(out, list) else []
+
+    @classmethod
+    def format_detail(cls, format_id: str) -> Dict[str, Any]:
+        from backend.services.parser_generation import workflow
+        return cls._formats_call("GET", f"/{format_id}", lambda: workflow.format_detail(format_id))
+
+    @classmethod
+    def learn_format(cls, format_id: str, vendor: str = "", product: str = "", name: str = "") -> Dict[str, Any]:
+        from backend.services.parser_generation import workflow
+        body = {"vendor": vendor or None, "product": product or None, "name": name or None}
+        return cls._formats_call("POST", f"/{format_id}/learn", lambda: workflow.learn_format(format_id, **body), body,
+                                 timeout=120.0)
+
+    @classmethod
+    def edit_learned(cls, parser_id: str, roles: Dict[str, Optional[str]], confirmed: List[str], reviewer: str,
+                     vendor: str = "", product: str = "", name: str = "") -> Dict[str, Any]:
+        from backend.services.parser_generation import workflow
+        body = {"roles": roles, "confirmed": confirmed, "reviewer": reviewer or "reviewer",
+                "vendor": vendor or None, "product": product or None, "name": name or None}
+        return cls._formats_call("PUT", f"/parsers/{parser_id}", lambda: workflow.edit(
+            parser_id, roles, confirmed, reviewer or "reviewer", name or None, vendor or None, product or None), body,
+            timeout=120.0)
+
+    @classmethod
+    def approve_learned(cls, parser_id: str, approved_by: str, confirmed: List[str]) -> Dict[str, Any]:
+        from backend.services.parser_generation import workflow
+        body = {"approved_by": approved_by, "confirmed": confirmed}
+        return cls._formats_call("POST", f"/parsers/{parser_id}/approve",
+                                 lambda: workflow.approve(parser_id, approved_by, confirmed), body, timeout=120.0)
+
+    @classmethod
+    def reject_learned(cls, parser_id: str) -> Dict[str, Any]:
+        from backend.services.parser_generation import workflow
+        return cls._formats_call("POST", f"/parsers/{parser_id}/reject", lambda: workflow.reject(parser_id))
+
+    @classmethod
+    def ignore_format(cls, format_id: str, undo: bool = False) -> Dict[str, Any]:
+        from backend.services.parser_generation import workflow
+        return cls._formats_call("POST", f"/{format_id}/ignore", lambda: workflow.set_ignored(format_id, not undo),
+                                 params={"undo": str(undo).lower()})
+
+    @classmethod
+    def reparse_learned(cls, parser_id: str) -> Dict[str, Any]:
+        from backend.services.parser_generation.reparse import reparse_history
+        return cls._formats_call("POST", f"/parsers/{parser_id}/reparse", lambda: reparse_history(parser_id), {},
+                                 timeout=600.0)

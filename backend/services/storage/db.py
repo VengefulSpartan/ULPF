@@ -192,6 +192,59 @@ class Database:
                            "ON delivery_events (output, sequence_num);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_delivery_events_batch ON delivery_events (batch_id);")
 
+            # 9. Log formats no parser pack knows, grouped by structure (see services/parsing/formats.py)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS log_formats (
+                format_id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                delimiter TEXT,
+                app TEXT,
+                template TEXT NOT NULL,
+                size INTEGER,
+                first_seen TEXT NOT NULL,
+                last_seen TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                confidence_sum REAL NOT NULL DEFAULT 0,
+                samples INTEGER NOT NULL DEFAULT 0,
+                sources_json TEXT,
+                status TEXT NOT NULL DEFAULT 'new',
+                parser_id TEXT,
+                drift_from TEXT
+            );
+            """)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS log_format_aliases (
+                alias TEXT PRIMARY KEY,
+                format_id TEXT NOT NULL
+            );
+            """)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS log_format_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                format_id TEXT NOT NULL,
+                raw_id TEXT,
+                raw_text TEXT NOT NULL,
+                source_name TEXT,
+                added_at TEXT NOT NULL
+            );
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_format_samples ON log_format_samples (format_id);")
+
+            # 10. Re-parsed events: a new chained event that supersedes an earlier one for the same raw line
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS event_revisions (
+                event_id TEXT PRIMARY KEY,
+                sequence_num INTEGER NOT NULL,
+                supersedes_event_id TEXT NOT NULL,
+                supersedes_sequence INTEGER NOT NULL,
+                raw_id TEXT NOT NULL,
+                parser_id TEXT,
+                reason TEXT,
+                created_at TEXT NOT NULL
+            );
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_revisions_raw ON event_revisions (raw_id);")
+
             # Migration: chain-of-custody metadata for streamed logs. raw_encoding
             # records how raw bytes were decoded, so raw_text.encode(raw_encoding)
             # always gives back the exact bytes received.
@@ -205,6 +258,15 @@ class Database:
             ):
                 if column not in existing:
                     cursor.execute(f"ALTER TABLE raw_logs ADD COLUMN {column} {ddl}")
+            # Migration: the format id of lines the generic parser handled (for re-parsing them later)
+            if "format_id" not in existing:
+                cursor.execute("ALTER TABLE raw_logs ADD COLUMN format_id TEXT")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_logs_format ON raw_logs (format_id);")
+            # Migration: an event re-parsed later points to its revision. Not part of the hashed record: the
+            # revision itself is chained and names the event it supersedes.
+            existing_ev = {row[1] for row in cursor.execute("PRAGMA table_info(normalized_events)")}
+            if "superseded_by" not in existing_ev:
+                cursor.execute("ALTER TABLE normalized_events ADD COLUMN superseded_by TEXT")
 
             conn.commit()
 

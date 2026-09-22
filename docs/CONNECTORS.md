@@ -35,7 +35,7 @@ In the commands below, `TRACELOG_IP` is the TRACELOG server's address. Ports: sy
 | `generic_leef` | Any | IBM LEEF 1.0/2.0 | header and attributes |
 | `generic` | Any | RFC 3164/5424 syslog, key=value, JSON | common field names; everything else preserved in unmapped |
 
-Lines no pack recognises are still archived, hash-chained and forwarded as OCSF Base Events; Parser Studio builds a new pack from samples.
+Lines no pack recognises are still archived, hash-chained and forwarded. They are parsed by an evidence-based parser that fills only fields it can prove (the event says `verified: false`), grouped into formats, and listed in Parser Studio's New log formats tab, where a parser is learned from their samples, approved and applied to past lines; see [PARSING.md](PARSING.md).
 
 ## Log sources
 

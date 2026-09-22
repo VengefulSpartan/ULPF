@@ -52,6 +52,11 @@ class OCSFNormalizer:
                     return v
         return None
 
+    SYSLOG_SEVERITY = {0: (5, "Critical"), 1: (5, "Critical"), 2: (5, "Critical"), 3: (4, "High"),
+                       4: (3, "Medium"), 5: (2, "Low"), 6: (1, "Informational"), 7: (1, "Informational")}
+    IANA_PROTOCOLS = {"1": "ICMP", "2": "IGMP", "6": "TCP", "17": "UDP", "47": "GRE", "50": "ESP", "51": "AH",
+                      "58": "IPV6-ICMP", "89": "OSPF", "132": "SCTP"}
+
     @classmethod
     def normalize_severity(cls, raw_sev: Any) -> Tuple[int, str]:
         """
@@ -149,6 +154,24 @@ class OCSFNormalizer:
         return now.isoformat(), int(now.timestamp() * 1000)
 
     @classmethod
+    def _parsed_ok(cls, raw_ts: Any) -> bool:
+        """True when parse_timestamp can read raw_ts (it falls back to the current time otherwise)."""
+        try:
+            float(raw_ts)
+            return True
+        except (ValueError, TypeError):
+            pass
+        s = str(raw_ts).strip()
+        for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S",
+                    "%Y-%m-%d %H:%M:%S", "%b %d %H:%M:%S", "%b  %d %H:%M:%S"):
+            try:
+                datetime.strptime(s, fmt)
+                return True
+            except ValueError:
+                continue
+        return False
+
+    @classmethod
     def normalize(
         cls,
         parsed_data: Dict[str, Any],
@@ -213,7 +236,17 @@ class OCSFNormalizer:
         dst_endpoint = Endpoint(ip=str(dst_ip) if dst_ip else None, port=dst_port)
 
         # 3. Connection & Traffic
+        for side, ip, port in (("src", src_ip, src_port), ("dst", dst_ip, dst_port)):
+            if port is not None and not ip:
+                unmapped[f"{side}_port_without_address"] = port
+                if side == "src":
+                    src_endpoint = Endpoint(ip=None, port=None)
+                else:
+                    dst_endpoint = Endpoint(ip=None, port=None)
+
         proto = cls.find_first(data, cls.PROTO_ALIASES)
+        if proto is not None and str(proto).strip() in cls.IANA_PROTOCOLS:
+            proto = cls.IANA_PROTOCOLS[str(proto).strip()]
         connection_info = ConnectionInfo(protocol_name=str(proto).upper() if proto else None)
 
         bytes_in_raw = cls.find_first(data, cls.BYTES_IN_ALIASES)
@@ -239,12 +272,17 @@ class OCSFNormalizer:
                 status_val = "failure"
 
         # 5. Severity
-        raw_sev = cls.find_first(data, ["severity_raw", "severity", "level", "priority", "severity_code"])
-        severity_id, severity = cls.normalize_severity(raw_sev)
+        raw_sev = cls.find_first(data, ["severity_raw", "severity", "level", "priority"])
+        if raw_sev is None and data.get("severity_code") is not None:
+            # syslog PRI severity: 0 = emergency ... 7 = debug, the opposite direction of the numeric scale below
+            severity_id, severity = cls.SYSLOG_SEVERITY.get(int(data["severity_code"]), (1, "Informational"))
+        else:
+            severity_id, severity = cls.normalize_severity(raw_sev)
 
         # 6. Timestamp
         raw_ts = cls.find_first(data, ["timestamp", "time", "date", "rt", "deviceReceiptTime", "start"])
         iso_time, epoch_ms = cls.parse_timestamp(raw_ts)
+        time_source = "device" if raw_ts is not None and cls._parsed_ok(raw_ts) else "received"
 
         # 7. User & Finding
         user_obj = User(name=str(user_val)) if user_val else None
@@ -277,6 +315,11 @@ class OCSFNormalizer:
                 unmapped[k] = v
         if data.get("_pack"):
             unmapped["parser_pack"] = data["_pack"]
+        if time_source == "received":
+            # no usable device time: say so rather than pass the arrival time off as the event's time
+            unmapped["time_source"] = "received"
+            if raw_ts is not None:
+                unmapped["time_unparsed"] = str(raw_ts)[:100]
 
         # Metadata
         metadata = Metadata(

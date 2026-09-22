@@ -271,9 +271,13 @@ def _reconcile_view():
     p, integ, deliv = rec["pipeline"], rec.get("integrity") or {}, rec.get("delivery_ledger") or {}
     c = st.columns(5)
     c[0].markdown(_card("Archived raw", f"{p['raw_archived']:,}", "lines, byte-for-byte"), unsafe_allow_html=True)
-    c[1].markdown(_card("Normalised", f"{p['normalized']:,}", "OCSF 1.1.0 events"), unsafe_allow_html=True)
+    revs = p.get("revisions", 0)
+    c[1].markdown(_card("Normalised", f"{p['normalized']:,}",
+                        f"OCSF 1.1.0 events, {revs:,} re-parse revisions" if revs else "OCSF 1.1.0 events"),
+                  unsafe_allow_html=True)
     c[2].markdown(_card("Hash-chained", f"{p['hash_chained']:,}",
-                        "same size as archive" if p["consistent"] else "sizes differ",
+                        ("one per line plus revisions" if revs else "same size as archive") if p["consistent"]
+                        else "counts do not add up",
                         "#0F172A" if p["consistent"] else "#B91C1C"), unsafe_allow_html=True)
     c[3].markdown(_card("Integrity chain", "valid" if integ.get("is_valid") else "FAILED",
                         f"{integ.get('verified_records', 0):,} records verified",

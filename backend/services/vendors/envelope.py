@@ -106,6 +106,19 @@ def split_envelope(text: str) -> Envelope:
             rest = rest[1:]
 
     m = _RFC5424.match(rest)
+    if m and env.pri is not None and any("=" in t for t in m.groups()[2:]):
+        # "<134>1 <ts> MX84 flows src=10.0.0.5 dst=..." looks like RFC 5424 but the APP-NAME / PROCID /
+        # MSGID slots hold message fields: keep the header up to the first key=value token only.
+        toks = rest.split(" ")
+        env.standard = "rfc5424"
+        env.timestamp = None if toks[1] == "-" else toks[1]
+        env.hostname = None if toks[2] == "-" else toks[2]
+        i = 3
+        if "=" not in toks[3]:
+            env.app = None if toks[3] == "-" else toks[3]
+            i = 4
+        env.message = " ".join(toks[i:])
+        return env
     if m and env.pri is not None:
         env.standard = "rfc5424"
         ts, host, app, procid, msgid = m.groups()

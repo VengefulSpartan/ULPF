@@ -94,9 +94,13 @@ def render_pdf(r: Dict[str, Any]) -> bytes:
         ["Check", "Result", "Detail"],
         ["Raw log lines archived byte-for-byte", p["raw_archived"],
          f"{p['streamed']:,} streamed from devices and forwarders, {p['uploaded_or_api']:,} uploaded or sent to the API"],
-        ["Normalised OCSF 1.1.0 events", p["normalized"], "one per archived line; unparsable lines kept as Base Events"],
-        ["Hash-chain records", p["hash_chained"], "archive, events and chain are the same size" if p["consistent"]
-         else "SIZES DIFFER"],
+        ["Normalised OCSF 1.1.0 events", p["normalized"],
+         "one per archived line; unparsable lines kept as Base Events"
+         + (f"; plus {p.get('revisions', 0):,} revisions of earlier events re-parsed with an approved parser (the "
+            f"originals stay in the chain)" if p.get("revisions") else "")],
+        ["Hash-chain records", p["hash_chained"],
+         ("one per event: archive, events, revisions and chain add up" if p.get("revisions") else
+          "archive, events and chain are the same size") if p["consistent"] else "COUNTS DO NOT ADD UP"],
         ["Integrity chain verification", "valid" if integ.get("is_valid") else "FAILED",
          f"{integ.get('verified_records', 0):,} of {integ.get('total_records', 0):,} records verified"
          + (f"; first bad record {integ.get('first_corrupted_seq')}" if integ.get("first_corrupted_seq") else "")],
