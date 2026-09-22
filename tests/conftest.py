@@ -32,7 +32,8 @@ def isolated_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db_module, "db", database)
     monkeypatch.setattr(ledger_module, "db", database)
     for mod in ("backend.api.connectors", "backend.api.sources", "backend.api.events", "backend.api.integrity",
-                "backend.api.parsers", "backend.api.analytics", "backend.api.export"):
+                "backend.api.parsers", "backend.api.analytics", "backend.api.export", "backend.api.ingestion",
+                "backend.services.ingestion.pipeline"):
         m = __import__(mod, fromlist=["db"])
         if hasattr(m, "db"):
             monkeypatch.setattr(m, "db", database)

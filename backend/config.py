@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", env_file=".env")
 
-    PROJECT_NAME: str = "Universal Log Pre-processing Framework (ULPF)"
+    PROJECT_NAME: str = "TRACELOG — Universal Log Pre-processing Framework"
     VERSION: str = "1.0.0"
     API_PREFIX: str = "/api"
     

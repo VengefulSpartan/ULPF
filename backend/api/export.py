@@ -3,6 +3,7 @@ import io
 import csv
 from fastapi import APIRouter, Response, Query
 from backend.services.storage.db import db
+from backend.services.normalization.ocsf_export import to_ocsf
 
 router = APIRouter(prefix="/export", tags=["Export & Integrations"])
 
@@ -13,13 +14,14 @@ def export_ocsf_json(limit: int = Query(1000, ge=1, le=5000)):
         cursor.execute("SELECT normalized_json FROM normalized_events WHERE superseded_by IS NULL "
                        "ORDER BY sequence_num ASC LIMIT ?", (limit,))
         rows = cursor.fetchall()
-        events = [json.loads(r["normalized_json"]) for r in rows]
+        # strict OCSF 1.1.0, exactly as the outputs send it (epoch-ms time, type_uid, finding_info, observables)
+        events = [to_ocsf(json.loads(r["normalized_json"])) for r in rows]
     
     json_bytes = json.dumps(events, indent=2).encode("utf-8")
     return Response(
         content=json_bytes,
         media_type="application/json",
-        headers={"Content-Disposition": "attachment; filename=ulpf_normalized_ocsf.json"}
+        headers={"Content-Disposition": "attachment; filename=tracelog_ocsf.json"}
     )
 
 @router.get("/csv")
@@ -56,5 +58,5 @@ def export_csv(limit: int = Query(1000, ge=1, le=5000)):
     return Response(
         content=csv_data,
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=ulpf_normalized_events.csv"}
+        headers={"Content-Disposition": "attachment; filename=tracelog_events.csv"}
     )

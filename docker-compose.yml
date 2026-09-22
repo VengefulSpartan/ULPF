@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  ulpf-backend:
+  tracelog-backend:
     build: .
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     ports:
@@ -11,7 +11,7 @@ services:
       - "5514:5514/tcp"      # for devices that cannot use TCP ports below 1025 (Cisco ASA)
       - "6514:6514/tcp"      # syslog over TLS, once a syslog-tls input is enabled in config/tracelog.yaml
     volumes:
-      - ulpf-data:/app/data
+      - tracelog-data:/app/data
       - ./config:/app/config:ro              # edit connectors without rebuilding the image
       - ./suricata-logs:/app/suricata-logs:ro # live sensor from docker-compose.devices.yml
     environment:
@@ -33,19 +33,19 @@ services:
       - SOAR_TOKEN=${SOAR_TOKEN:-}
     restart: unless-stopped
 
-  ulpf-frontend:
+  tracelog-frontend:
     build: .
     command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
     ports:
       - "8501:8501"
     volumes:
-      - ulpf-data:/app/data
+      - tracelog-data:/app/data
     environment:
-      - BACKEND_HOST=ulpf-backend
+      - BACKEND_HOST=tracelog-backend
       - BACKEND_PORT=8000
     depends_on:
-      - ulpf-backend
+      - tracelog-backend
     restart: unless-stopped
 
 volumes:
-  ulpf-data:
+  tracelog-data:

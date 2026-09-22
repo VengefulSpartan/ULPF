@@ -5,7 +5,7 @@ import os
 
 def main():
     print("=" * 65)
-    print("  ULPF — Universal Log Pre-processing Framework Launcher")
+    print("  TRACELOG — Universal Log Pre-processing Framework")
     print("=" * 65)
     print("[*] Starting FastAPI Backend on http://127.0.0.1:8000 ...")
     backend_proc = subprocess.Popen(
@@ -23,7 +23,7 @@ def main():
         backend_proc.wait()
         frontend_proc.wait()
     except KeyboardInterrupt:
-        print("\n[*] Shutting down ULPF services...")
+        print("\n[*] Shutting down TRACELOG...")
         backend_proc.terminate()
         frontend_proc.terminate()
         print("[+] Goodbye.")

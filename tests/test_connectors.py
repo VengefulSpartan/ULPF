@@ -325,9 +325,9 @@ def test_syslog_udp_cef_and_leef(udp_capture, ocsf_events, tmp_path):
     while len(udp_capture.data) < 2 and time.time() < deadline:
         time.sleep(0.02)
     c, l = (d.decode() for d in udp_capture.data[:2])
-    assert c.startswith("<") and " tracelog - OCSF4001 - CEF:0|TRACELOG|ULPF|1.0|4001" in c
+    assert c.startswith("<") and " tracelog - OCSF4001 - CEF:0|TRACELOG|TRACELOG|1.0|4001" in c
     assert "src=10.20.4.5" in c and "dpt=443" in c
-    assert "LEEF:2.0|TRACELOG|ULPF|1.0|4001" in l and "\tsrc=10.20.4.5" in l
+    assert "LEEF:2.0|TRACELOG|TRACELOG|1.0|4001" in l and "\tsrc=10.20.4.5" in l
 
 
 def test_syslog_tcp_json_uses_octet_counting(tcp_capture, ocsf_events, tmp_path):
@@ -392,7 +392,7 @@ def test_cef_escaping():
           "message": "x=y\nz", "metadata": {}}
     line = cef(ev)
     assert "|a\\|b\\\\c|10|" in line and "msg=x\\=y\\nz" in line
-    assert leef(ev).startswith("LEEF:2.0|TRACELOG|ULPF|1.0|200401|x09|")
+    assert leef(ev).startswith("LEEF:2.0|TRACELOG|TRACELOG|1.0|200401|x09|")
 
 
 def test_connector_test_endpoint_reports_delivery(api, mock_http):

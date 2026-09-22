@@ -164,8 +164,8 @@ def store_event(conn, ev, event_id: str, seq: int, raw_id: str, raw_hash: str) -
 def note_format(conn, parsed: Dict[str, Any]) -> Optional[str]:
     """The registry format id for a line handled by the generic or a learned parser (None for vendor packs)."""
     tp = parsed.get("tracelog_parse")
-    if not tp or not tp.get("format_id"):
-        return None
+    if not tp or not tp.get("format_id") or tp.get("standard"):
+        return None  # vendor packs and standard formats (CEF, LEEF) are not new formats
     try:
         tp["format_id"] = format_registry.resolve(conn, tp)
     except Exception:
