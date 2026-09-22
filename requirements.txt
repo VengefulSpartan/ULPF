@@ -10,14 +10,8 @@ python-multipart>=0.0.9
 pytest>=8.0.0
 httpx>=0.27.0
 pyyaml>=6.0
-# Used by the core/, ingest/ and rca/ modules and their tests (same as pyproject.toml)
-structlog>=24.1.0
-networkx>=3.2.1
-drain3>=0.9.11
-minio>=7.2.5
-opensearch-py>=2.4.2
+# Kafka input and output connectors
 kafka-python-ng>=2.2.2
-pytest-asyncio>=0.23.5
 # Optional: Parquet output (data lakes, Amazon Security Lake custom sources)
 #   pyarrow>=15.0
 # Audit report PDF export
