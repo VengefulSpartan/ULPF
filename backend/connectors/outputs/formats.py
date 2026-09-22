@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Tuple
 
-PRODUCT_VENDOR, PRODUCT_NAME, PRODUCT_VERSION = "TRACELOG", "ULPF", "1.0"
+PRODUCT_VENDOR, PRODUCT_NAME, PRODUCT_VERSION = "TRACELOG", "TRACELOG", "1.0"
 
 # OCSF severity_id -> syslog severity (RFC 5424) / CEF 0-10 / OTel severityNumber
 SYSLOG_SEV = {0: 6, 1: 6, 2: 5, 3: 4, 4: 3, 5: 2, 6: 1, 99: 6}

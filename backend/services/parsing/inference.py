@@ -30,6 +30,7 @@ from backend.services.vendors.envelope import Envelope, SYSLOG_SEVERITY_TEXT, sp
 
 THRESHOLD = 0.7  # minimum confidence to fill a field
 PACK = "generic_inferred"
+STANDARD_PACKS = {"cef": "generic_cef", "leef": "generic_leef"}   # names listed in vendors.SUPPORTED_SOURCES
 
 # ---------------------------------------------------------------------------------------------
 # key meaning
@@ -524,6 +525,10 @@ def infer(raw_text: str, env: Optional[Envelope] = None, st: Optional[Dict[str, 
         cls = AUTHENTICATION
     elif has_ip:
         cls = NETWORK_ACTIVITY
+    elif observed_ips and ("protocol" in chosen or "action" in chosen) and not AUTH_WORDS.search(env.message):
+        # addresses plus a protocol or an allow/deny: network traffic, even though the line does not say which
+        # address is the source; the endpoints stay empty and the addresses are listed as unassigned
+        cls = NETWORK_ACTIVITY
     else:
         cls = BASE_EVENT
     activity = (NA_REFUSE if chosen.get("action", (None,))[0] == "denied" else NA_TRAFFIC) \
@@ -544,10 +549,15 @@ def infer(raw_text: str, env: Optional[Envelope] = None, st: Optional[Dict[str, 
         vendor_fields["_message_text"] = (st.get("text") or "").strip()[:2000]
     out = event(vendor, product, cls, activity, None, vendor_fields,
                 device_hostname=env.hostname, **canonical)
-    out["_pack"] = PACK
+    # CEF and LEEF define their own key names (src, dst, spt, dpt, act, suser, ...): fields read from them follow the
+    # standard, not an inference, so these lines count as parsed by a known format and never as "new formats"
+    standard = STANDARD_PACKS.get(st["kind"])
+    pack = standard or PACK
+    out["_pack"] = pack
     fp = fingerprint(st, env)
     out["tracelog_parse"] = {
-        "parser": f"generic ({st['kind']})", "verified": False, "confidence": confidence,
+        "parser": f"{st['kind'].upper()} standard keys" if standard else f"generic ({st['kind']})",
+        "verified": bool(standard), "standard": st["kind"].upper() if standard else None, "confidence": confidence,
         "format_id": fp["format_id"], "template": fp["template"],
         "structure": {"kind": st["kind"], "delimiter": st["delimiter"], "app": fp["app"], "size": fp["size"]},
         "fields": {r: {"value": v[0], "confidence": round(v[1], 2), "why": v[2]} for r, v in chosen.items()},
@@ -556,4 +566,4 @@ def infer(raw_text: str, env: Optional[Envelope] = None, st: Optional[Dict[str, 
         "unassigned_ips": observed_ips[:10],
         "time_source": "device" if "time" in chosen else "received",
     }
-    return PACK, out
+    return pack, out

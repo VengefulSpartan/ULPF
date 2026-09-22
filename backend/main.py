@@ -34,7 +34,7 @@ app = FastAPI(
     lifespan=lifespan,
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="Enterprise-grade Universal Log Pre-processing Framework for Perimeter Network Security",
+    description="TRACELOG: receives perimeter device logs, archives each line, normalises it to OCSF 1.1.0, hash-chains it and forwards it to SIEM and observability tools (SIH 2026, PS 26156).",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -66,7 +66,7 @@ app.include_router(receivers_router)
 def health_check():
     return {
         "status": "healthy",
-        "service": "ULPF FastAPI Backend",
+        "service": "TRACELOG API",
         "version": settings.VERSION,
         "database": "SQLite (WAL mode)",
         "db_path": str(settings.DB_PATH),

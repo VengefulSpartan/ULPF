@@ -81,8 +81,15 @@ def render_explorer():
         st.markdown(f"**Raw SHA-256 Hash**: <span class='hash-pill'>{sel_event.get('raw_hash')}</span>", unsafe_allow_html=True)
 
     with col_norm:
-        st.markdown("**2. Normalized OCSF v1.1.0 Event:**")
-        st.json(sel_event.get("normalized", {}))
+        from backend.services.normalization.ocsf_export import to_ocsf, validate
+        ocsf_event = to_ocsf(sel_event.get("normalized") or {})
+        problems = validate(ocsf_event)
+        st.markdown("**2. OCSF 1.1.0 event, as sent to the outputs:** "
+                    + ("<span class='badge badge-success'>passes OCSF checks</span>" if not problems else
+                       f"<span class='badge badge-error'>{'; '.join(problems)}</span>"), unsafe_allow_html=True)
+        st.json(ocsf_event)
+        with st.expander("Internal normalised record (what is hash-chained)"):
+            st.json(sel_event.get("normalized", {}))
 
     # Unmapped fields if any
     unmapped = sel_event.get("unmapped", {})

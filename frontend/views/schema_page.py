@@ -8,7 +8,7 @@ def render_schema():
 
     st.markdown(
         """
-        ULPF normalizes heterogeneous perimeter telemetry into a standardized, analytics-ready OCSF v1.1.0 representation.
+        TRACELOG normalizes heterogeneous perimeter telemetry into a standardized, analytics-ready OCSF v1.1.0 representation.
         Events map to three primary perimeter security classes:
         - **Class 4001**: Network Activity (Traffic flows, connections, ACL rules)
         - **Class 3002**: Authentication (VPN logons, user sessions, MFA verification)
@@ -49,31 +49,18 @@ def render_schema():
         st.dataframe(pd.DataFrame(fields_data), use_container_width=True, hide_index=True)
 
     with tab_sample:
-        st.markdown("##### Example Canonical OCSF JSON Document")
-        sample_doc = {
-            "metadata": {
-                "version": "1.1.0",
-                "product": {"vendor_name": "Palo Alto Networks", "name": "PA-5200", "version": "10.1"},
-                "sequence_num": 42,
-                "raw_ref": {"raw_id": "c7a8b9-...", "raw_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
-            },
-            "class_uid": 4001,
-            "class_name": "Network Activity",
-            "category_uid": 4,
-            "category_name": "Network Activity",
-            "activity_id": 6,
-            "activity_name": "Traffic",
-            "type_uid": 400106,
-            "severity_id": 3,
-            "severity": "Medium",
-            "time": "2026-09-20T14:00:32Z",
-            "time_epoch_ms": 1789912832000,
-            "src_endpoint": {"ip": "10.0.1.15", "port": 49152},
-            "dst_endpoint": {"ip": "192.168.1.50", "port": 445},
-            "connection_info": {"protocol_name": "TCP"},
-            "disposition": "allowed",
-            "action": "allow",
-            "raw_data": "CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|start|3|src=10.0.1.15 dst=192.168.1.50 spt=49152 dpt=445 proto=TCP act=allow",
-            "unmapped": {"deviceReceiptTime": "2026-09-20T14:00:32Z"}
-        }
+        st.markdown("##### Example OCSF 1.1.0 event, produced live from a raw line")
+        from backend.services.normalization.ocsf_export import to_ocsf, validate
+        from backend.services.normalization.ocsf_normalizer import OCSFNormalizer
+        from backend.services.parsing.dispatch import parse_log
+        raw = ("CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|start|3|src=10.0.1.15 dst=192.168.1.50 spt=49152 "
+               "dpt=445 proto=TCP act=allow rt=Sep 20 2026 14:00:32")
+        st.code(raw, language="text")
+        _, parsed = parse_log(raw)
+        ev = OCSFNormalizer.normalize(parsed, raw, "example", "example", vendor=parsed.get("vendor") or "Generic",
+                                      product=parsed.get("product") or "Device", sequence_num=42)
+        sample_doc = to_ocsf(ev.model_dump())
+        problems = validate(sample_doc)
+        st.caption("Passes the OCSF 1.1.0 checks TRACELOG applies to every output." if not problems else
+                   "OCSF check: " + "; ".join(problems))
         st.json(sample_doc)

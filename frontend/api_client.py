@@ -10,7 +10,7 @@ BASE_URL = f"http://{settings.BACKEND_HOST}:{settings.BACKEND_PORT}{settings.API
 
 class APIClient:
     """
-    HTTP client for interacting with the ULPF FastAPI backend.
+    HTTP client for the TRACELOG API.
     Includes transparent local fallback to Python services if the standalone
     FastAPI daemon is unreachable.
     """
@@ -34,6 +34,17 @@ class APIClient:
         # Fallback to service directly
         from backend.api.analytics import get_overview_kpis
         return get_overview_kpis()
+
+    @classmethod
+    def get_unparsed(cls, limit: int = 5) -> Dict[str, Any]:
+        try:
+            r = requests.get(f"{BASE_URL}/analytics/unparsed", params={"limit": limit}, timeout=3.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        from backend.api.analytics import unparsed_lines
+        return unparsed_lines(limit)
 
     @classmethod
     def seed_samples(cls) -> Dict[str, Any]:

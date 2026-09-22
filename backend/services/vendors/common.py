@@ -60,11 +60,18 @@ def iso_from_formats(value: Optional[str], formats: Iterable[str], tz_offset: Op
     """Parse a vendor timestamp and return ISO 8601. Naive times get tz_offset (e.g. '+0530') or UTC."""
     if not value:
         return None
+    text = re.sub(r"\s+", " ", value.strip())  # "Sep  1" (two spaces) is how syslog pads single-digit days
+    now = datetime.now(timezone.utc)
     for fmt in formats:
+        yearless = "%Y" not in fmt and "%y" not in fmt and "%s" not in fmt
         try:
-            dt = datetime.strptime(value.strip(), fmt)
+            # a timestamp without a year (BSD syslog "Sep 20 14:00:15") is parsed with the current year
+            # attached, so it is not dated 1900 and Feb 29 parses in a leap year
+            dt = datetime.strptime(f"{now.year} {text}", f"%Y {fmt}") if yearless else datetime.strptime(text, fmt)
         except ValueError:
             continue
+        if yearless and dt.replace(tzinfo=timezone.utc) > now + timedelta(days=2):
+            dt = dt.replace(year=now.year - 1)  # a December line read in January
         if dt.tzinfo is None:
             tz = timezone.utc
             if tz_offset:

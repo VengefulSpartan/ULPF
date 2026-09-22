@@ -4,16 +4,16 @@ services:
   # Target Web Application (Nginx)
   target-web:
     image: nginx:alpine
-    container_name: ulpf-target-web
+    container_name: tracelog-target-web
     ports:
       - "8080:80"
     networks:
-      - ulpf-security-net
+      - tracelog-security-net
 
   # Real Open-Source Suricata IDS Device
   suricata:
     image: jasonish/suricata:latest
-    container_name: ulpf-suricata
+    container_name: tracelog-suricata
     network_mode: "host"
     cap_add:
       - NET_ADMIN
@@ -29,7 +29,7 @@ services:
   # Real Network Traffic Generator (Nmap, Curl web attacks)
   traffic-generator:
     image: alpine:latest
-    container_name: ulpf-traffic-generator
+    container_name: tracelog-traffic-generator
     command: >
       sh -c "
         apk add --no-cache curl nmap &&
@@ -45,10 +45,10 @@ services:
         echo '[+] Attack simulation completed.'
       "
     networks:
-      - ulpf-security-net
+      - tracelog-security-net
     depends_on:
       - target-web
 
 networks:
-  ulpf-security-net:
+  tracelog-security-net:
     driver: bridge

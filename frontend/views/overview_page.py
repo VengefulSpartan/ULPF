@@ -26,63 +26,44 @@ def render_overview():
     total_parsers = kpis.get("total_parsers", 0)
     ledger_count = kpis.get("ledger_entries", 0)
 
-    # Top KPI Cards
+    parsing = kpis.get("parsing") or {}
+    conf = kpis.get("ocsf_conformance") or {}
+    pipe = kpis.get("pipeline") or {}
+    fresh = kpis.get("new_formats") or {}
+
+    def card(col, title, value, sub, color="#123B5D"):
+        col.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-title">{title}</div>
+                <div class="metric-value" style="color:{color};">{value}</div>
+                <div class="metric-subtext">{sub}</div>
+            </div>""", unsafe_allow_html=True)
+
+    # Top KPI Cards: every number is measured from the database
     m1, m2, m3, m4, m5 = st.columns(5)
-    with m1:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Total Processed</div>
-                <div class="metric-value">{total_events}</div>
-                <div class="metric-subtext">Verified normalized records</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    with m2:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Active Sources</div>
-                <div class="metric-value">{active_sources}</div>
-                <div class="metric-subtext">Perimeter appliances</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    with m3:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Parser Accuracy</div>
-                <div class="metric-value">99.4%</div>
-                <div class="metric-subtext">{approved_parsers}/{total_parsers} parsers approved</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    with m4:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">OCSF Conformance</div>
-                <div class="metric-value">100%</div>
-                <div class="metric-subtext">Schema v1.1.0 validated</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    with m5:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Integrity Ledger</div>
-                <div class="metric-value">{ledger_count}</div>
-                <div class="metric-subtext"><span class="badge badge-success">Chain Active</span></div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    revisions = pipe.get("revisions", 0)
+    card(m1, "Normalized events", f"{total_events:,}",
+         f"current versions · {revisions:,} re-parsed" if revisions else "OCSF 1.1.0, one per archived line")
+    card(m2, "Active sources", f"{active_sources:,}", "devices and forwarders")
+    known = parsing.get("known_parser_pct", 0.0)
+    card(m3, "Read by a known parser", f"{known}%" if total_events else "–",
+         f"{parsing.get('vendor_pack', 0):,} vendor packs · {parsing.get('learned', 0):,} learned · "
+         f"{parsing.get('generic', 0):,} generic (unverified)",
+         "#2E7D32" if known >= 90 else "#B45309" if total_events else "#123B5D")
+    valid = conf.get("valid_pct", 0.0)
+    card(m4, "OCSF 1.1.0 conformance", f"{valid}%" if conf.get("checked") else "–",
+         f"latest {conf.get('checked', 0):,} events checked against OCSF",
+         "#2E7D32" if valid == 100 else "#B91C1C" if conf.get("checked") else "#123B5D")
+    ok = pipe.get("consistent", True)
+    card(m5, "Integrity chain", f"{ledger_count:,}",
+         "one record per event" if ok else "counts do not add up: verify the chain", "#123B5D" if ok else "#B91C1C")
+
+    if fresh.get("formats"):
+        st.warning(f"**{fresh['lines']:,} lines from {fresh['formats']} log format(s) no parser knows** were archived "
+                   "and parsed without guessing: only fields with evidence are filled, and they are marked unverified. "
+                   "Review them in **Parser Studio > New log formats** to learn and approve a parser.")
+    for problem, n in conf.get("top_failures") or []:
+        st.error(f"OCSF check failed on {n} of the latest events: {problem}")
 
     st.markdown("---")
 
@@ -107,7 +88,8 @@ def render_overview():
         st.markdown("##### Normalized Events by OCSF Category")
         by_cat = kpis.get("events_by_category", {})
         if by_cat:
-            df_cat = pd.DataFrame(list(by_cat.items()), columns=["Category", "Count"])
+            labels = {"Uncategorized": "Base Event (not classified yet)"}
+            df_cat = pd.DataFrame([(labels.get(k, k), v) for k, v in by_cat.items()], columns=["Category", "Count"])
             fig_cat = px.pie(
                 df_cat, names="Category", values="Count",
                 hole=0.45,

@@ -4,7 +4,7 @@ from frontend.api_client import APIClient
 
 # Page setup
 st.set_page_config(
-    page_title="ULPF — Universal Log Pre-processing Framework",
+    page_title="TRACELOG — Universal Log Pre-processing Framework",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -38,8 +38,8 @@ with st.sidebar:
                     🛡️
                 </div>
                 <div>
-                    <div style="font-size: 1.35rem; font-weight: 800; letter-spacing: 0.8px; color: #FFFFFF; line-height: 1.1;">ULPF</div>
-                    <div style="font-size: 0.7rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Cyber Telemetry Fabric</div>
+                    <div style="font-size: 1.35rem; font-weight: 800; letter-spacing: 0.8px; color: #FFFFFF; line-height: 1.1;">TRACELOG</div>
+                    <div style="font-size: 0.7rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Universal Log Pre-processing</div>
                 </div>
             </div>
             <div style="background: rgba(0, 119, 182, 0.15); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 6px 10px; margin-top: 14px; display:flex; align-items:center; gap: 8px;">
@@ -88,7 +88,7 @@ with st.sidebar:
             </div>
         </div>
         <div style="font-size:0.68rem; color:#475569; margin-top: 12px; text-align: center;">
-            ULPF Enterprise v1.0.0
+            TRACELOG v1.0 · SIH 2026 · PS 26156
         </div>
         """,
         unsafe_allow_html=True

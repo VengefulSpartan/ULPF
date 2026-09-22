@@ -10,7 +10,7 @@ def render_integrity():
     st.markdown(
         """
         > **Evidence Standard Notice**: A successful cryptographic hash verification mathematically proves 
-        > that log records have not been altered, reordered, or deleted since initial ingestion into ULPF. 
+        > that log records have not been altered, reordered, or deleted since initial ingestion into TRACELOG. 
         > It is distinct from proof that the originating hardware appliance was truthful or completely collected.
         """
     )
