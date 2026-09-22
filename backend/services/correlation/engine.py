@@ -32,7 +32,7 @@ class CorrelationEngine:
                     SELECT n.*, r.raw_hash
                     FROM normalized_events n
                     JOIN raw_logs r ON n.raw_id = r.id
-                    WHERE n.src_ip = ? OR n.dst_ip = ?
+                    WHERE (n.src_ip = ? OR n.dst_ip = ?) AND n.superseded_by IS NULL
                     ORDER BY n.time_epoch_ms ASC
                     LIMIT 200
                     """,
@@ -44,6 +44,7 @@ class CorrelationEngine:
                     SELECT n.*, r.raw_hash
                     FROM normalized_events n
                     JOIN raw_logs r ON n.raw_id = r.id
+                    WHERE n.superseded_by IS NULL
                     ORDER BY n.time_epoch_ms ASC
                     LIMIT 200
                     """

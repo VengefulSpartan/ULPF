@@ -13,7 +13,8 @@ def list_events(
     class_name: Optional[str] = None,
     ip: Optional[str] = None,
     limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    include_superseded: bool = Query(False, description="also list events replaced by a re-parse")
 ):
     with db.get_connection() as conn:
         cursor = conn.cursor()
@@ -26,6 +27,8 @@ def list_events(
         WHERE 1=1
         """
         params = []
+        current = "" if include_superseded else " AND n.superseded_by IS NULL"
+        query += current
 
         if search:
             query += " AND (r.raw_text LIKE ? OR n.normalized_json LIKE ?)"
@@ -79,11 +82,12 @@ def list_events(
                 "vendor": r["vendor"],
                 "product": r["product"],
                 "normalized": json.loads(r["normalized_json"]),
-                "unmapped": json.loads(r["unmapped_json"]) if r["unmapped_json"] else {}
+                "unmapped": json.loads(r["unmapped_json"]) if r["unmapped_json"] else {},
+                "superseded_by": r["superseded_by"]
             })
 
         # Total count
-        cursor.execute("SELECT COUNT(*) FROM normalized_events")
+        cursor.execute("SELECT COUNT(*) FROM normalized_events n WHERE 1=1" + current)
         total_count = cursor.fetchone()[0]
 
         return {
@@ -127,6 +131,7 @@ def get_event_detail(event_id: str):
             "dst_port": r["dst_port"],
             "protocol": r["protocol"],
             "action": r["action"] or r["disposition"],
+            "superseded_by": r["superseded_by"],
             "user_name": r["user_name"],
             "raw_text": r["raw_text"],
             "raw_hash": r["raw_hash"],

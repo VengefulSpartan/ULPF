@@ -25,6 +25,7 @@ from backend.services.integrity.ledger import IntegrityLedger
 from backend.services.normalization.ocsf_export import to_ocsf
 from backend.services.normalization.ocsf_normalizer import OCSFNormalizer
 from backend.services.parsing.dispatch import parse_log
+from backend.services.parsing.formats import registry as format_registry
 from backend.services.storage import db as db_module
 
 logger = logging.getLogger("tracelog.stream")
@@ -102,13 +103,14 @@ class SourceResolver:
         # Collector), where the peer address is the relay's. Fall back to the sender address.
         # A message without a hostname is given the hostname already seen from the same sender for the same
         # product, but only when that sender has shown exactly one (a relay for several devices stays ambiguous).
+        # Not for lines no parser recognised: "Unknown" says nothing about which device sent them.
         device = hostname if hostname and _HOSTNAME_RE.fullmatch(hostname) else None
         peer_key = (rec.peer_ip or rec.input_name, vendor, product)
         with self._lock:
             seen = self._peer_hosts.setdefault(peer_key, set())
             if device:
                 seen.add(device)
-            elif len(seen) == 1:
+            elif len(seen) == 1 and vendor != "Unknown":
                 device = next(iter(seen))
         who = device or rec.peer_ip or rec.input_name
         label = product if vendor.lower() in product.lower() else f"{vendor} {product}"
@@ -137,6 +139,40 @@ class SourceResolver:
         return result
 
 
+def store_event(conn, ev, event_id: str, seq: int, raw_id: str, raw_hash: str) -> Dict[str, Any]:
+    """Insert a normalised event and append it to the integrity chain (inside the caller's transaction)."""
+    normalized = ev.model_dump()
+    conn.execute(
+        """INSERT INTO normalized_events (id, sequence_num, raw_id, class_uid, class_name, category_uid,
+           category_name, activity_id, activity_name, severity_id, severity, time, time_epoch_ms, src_ip,
+           src_port, dst_ip, dst_port, protocol, action, disposition, user_name, finding_title,
+           normalized_json, unmapped_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+        (event_id, seq, raw_id, ev.class_uid, ev.class_name, ev.category_uid, ev.category_name,
+         ev.activity_id, ev.activity_name, ev.severity_id, ev.severity, ev.time, ev.time_epoch_ms,
+         ev.src_endpoint.ip if ev.src_endpoint else None, ev.src_endpoint.port if ev.src_endpoint else None,
+         ev.dst_endpoint.ip if ev.dst_endpoint else None, ev.dst_endpoint.port if ev.dst_endpoint else None,
+         ev.connection_info.protocol_name if ev.connection_info else None, ev.action, ev.disposition,
+         ev.user.name if ev.user else None, ev.finding.title if ev.finding else None,
+         json.dumps(normalized), json.dumps(ev.unmapped)),
+    )
+    IntegrityLedger.append_event(conn=conn, event_id=event_id, raw_id=raw_id, raw_hash=raw_hash,
+                                 normalized_data=normalized)
+    return normalized
+
+
+def note_format(conn, parsed: Dict[str, Any]) -> Optional[str]:
+    """The registry format id for a line handled by the generic or a learned parser (None for vendor packs)."""
+    tp = parsed.get("tracelog_parse")
+    if not tp or not tp.get("format_id"):
+        return None
+    try:
+        tp["format_id"] = format_registry.resolve(conn, tp)
+    except Exception:
+        logger.exception("could not resolve the log format")
+    return tp["format_id"]
+
+
 class StreamIngestor:
     def __init__(self, resolver: Optional[SourceResolver] = None):
         self.resolver = resolver or SourceResolver()
@@ -159,18 +195,23 @@ class StreamIngestor:
         stored: List[StoredEvent] = []
         counts: Dict[str, int] = {}
         database = db_module.db
-        with database.get_connection() as conn:
+        formats: List[Dict[str, Any]] = []
+        with IntegrityLedger.write_lock, database.get_connection() as conn:
             for rec, text, encoding, fmt, parsed in prepared:
                 source_id, source_name = self.resolver.resolve(conn, rec, parsed, fmt)
                 raw_id, event_id = str(uuid.uuid4()), str(uuid.uuid4())
                 raw_hash = Hasher.hash_raw_bytes(text)
+                format_id = note_format(conn, parsed)
                 conn.execute(
                     "INSERT INTO raw_logs (id, source_id, raw_text, raw_hash, ingested_at, format_detected, status, "
-                    "raw_encoding, transport, input_name, peer_ip, received_at) "
-                    "VALUES (?, ?, ?, ?, datetime('now'), ?, 'ingested', ?, ?, ?, ?, ?)",
+                    "raw_encoding, transport, input_name, peer_ip, received_at, format_id) "
+                    "VALUES (?, ?, ?, ?, datetime('now'), ?, 'ingested', ?, ?, ?, ?, ?, ?)",
                     (raw_id, source_id, text, raw_hash, fmt, encoding, rec.transport, rec.input_name,
-                     rec.peer_ip, rec.received_at),
+                     rec.peer_ip, rec.received_at, format_id),
                 )
+                if format_id:
+                    formats.append({"format_id": format_id, "tp": parsed["tracelog_parse"], "raw_id": raw_id,
+                                    "raw_text": text, "source_name": source_name})
                 latest = IntegrityLedger.get_latest_entry(conn)
                 seq = (latest["sequence_num"] + 1) if latest else 1
                 try:
@@ -190,28 +231,17 @@ class StreamIngestor:
                     ev.unmapped["device_hostname"] = rec.hints["hostname"]
                 if rec.peer_ip:
                     ev.unmapped.setdefault("sender_ip", rec.peer_ip)
-                normalized = ev.model_dump()
-                conn.execute(
-                    """INSERT INTO normalized_events (id, sequence_num, raw_id, class_uid, class_name, category_uid,
-                       category_name, activity_id, activity_name, severity_id, severity, time, time_epoch_ms, src_ip,
-                       src_port, dst_ip, dst_port, protocol, action, disposition, user_name, finding_title,
-                       normalized_json, unmapped_json, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
-                    (event_id, seq, raw_id, ev.class_uid, ev.class_name, ev.category_uid, ev.category_name,
-                     ev.activity_id, ev.activity_name, ev.severity_id, ev.severity, ev.time, ev.time_epoch_ms,
-                     ev.src_endpoint.ip if ev.src_endpoint else None, ev.src_endpoint.port if ev.src_endpoint else None,
-                     ev.dst_endpoint.ip if ev.dst_endpoint else None, ev.dst_endpoint.port if ev.dst_endpoint else None,
-                     ev.connection_info.protocol_name if ev.connection_info else None, ev.action, ev.disposition,
-                     ev.user.name if ev.user else None, ev.finding.title if ev.finding else None,
-                     json.dumps(normalized), json.dumps(ev.unmapped)),
-                )
-                IntegrityLedger.append_event(conn=conn, event_id=event_id, raw_id=raw_id, raw_hash=raw_hash,
-                                             normalized_data=normalized)
+                normalized = store_event(conn, ev, event_id, seq, raw_id, raw_hash)
                 counts[source_id] = counts.get(source_id, 0) + 1
                 stored.append(StoredEvent(event_id, raw_id, source_id, source_name, seq, normalized,
                                           to_ocsf(normalized)))
             for source_id, n in counts.items():
                 conn.execute("UPDATE sources SET event_count = event_count + ?, last_event_at = datetime('now') "
                              "WHERE id = ?", (n, source_id))
+            if formats:
+                try:
+                    format_registry.note_batch(conn, formats)
+                except Exception:  # counting formats must never cost a log line
+                    logger.exception("could not update the format registry")
             conn.commit()
         return stored

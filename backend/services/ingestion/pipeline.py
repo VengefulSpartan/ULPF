@@ -40,16 +40,19 @@ class IngestionPipeline:
         # 1. Parse log
         format_detected, parsed_data = parse_log(raw_text)
 
-        with db.get_connection() as conn:
+        with IntegrityLedger.write_lock, db.get_connection() as conn:
             cursor = conn.cursor()
 
             # 2. Insert into raw_logs (lossless byte preservation)
+            from backend.services.ingestion.stream import note_format
+            format_id = note_format(conn, parsed_data)
             cursor.execute(
                 """
-                INSERT INTO raw_logs (id, source_id, raw_text, raw_hash, ingested_at, format_detected, status)
-                VALUES (?, ?, ?, ?, datetime('now'), ?, 'ingested')
+                INSERT INTO raw_logs (id, source_id, raw_text, raw_hash, ingested_at, format_detected, status,
+                                      format_id)
+                VALUES (?, ?, ?, ?, datetime('now'), ?, 'ingested', ?)
                 """,
-                (raw_id, source_id, raw_text, raw_hash, format_detected)
+                (raw_id, source_id, raw_text, raw_hash, format_detected, format_id)
             )
 
             # 3. Determine next sequence number
@@ -111,6 +114,16 @@ class IngestionPipeline:
                 raw_hash=raw_hash,
                 normalized_data=normalized_dict
             )
+
+            if format_id:
+                from backend.services.parsing.formats import registry as format_registry
+                row = cursor.execute("SELECT name FROM sources WHERE id = ?", (source_id,)).fetchone()
+                try:
+                    format_registry.note_batch(conn, [{"format_id": format_id, "tp": parsed_data["tracelog_parse"],
+                                                       "raw_id": raw_id, "raw_text": raw_text,
+                                                       "source_name": row[0] if row else None}])
+                except Exception:
+                    logger.exception("could not update the format registry")
 
             # 7. Update source event stats
             cursor.execute(

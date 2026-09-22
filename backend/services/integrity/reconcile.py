@@ -34,15 +34,21 @@ def _pipeline() -> Dict[str, Any]:
         lo, hi, max_seq = conn.execute(
             "SELECT MIN(time_epoch_ms), MAX(time_epoch_ms), MAX(sequence_num) FROM normalized_events").fetchone()
         head = conn.execute("SELECT record_hash FROM integrity_ledger ORDER BY sequence_num DESC LIMIT 1").fetchone()
+        from backend.services.parser_generation.reparse import revision_check
+        revisions = revision_check(conn)
         streamed = conn.execute("SELECT COUNT(*) FROM raw_logs WHERE transport IS NOT NULL").fetchone()[0]
         sources = [dict(r) for r in conn.execute(
             "SELECT name, vendor, product, category, event_count, last_event_at FROM sources "
             "WHERE event_count > 0 ORDER BY event_count DESC")]
-    return {"raw_archived": raw, "normalized": normalized, "hash_chained": chained, "streamed": streamed,
+    originals = normalized - revisions["revisions"]
+    # every archived line has one original event; re-parses add chained revisions of those lines
+    return {"raw_archived": raw, "normalized": normalized, "original_events": originals,
+            "revisions": revisions["revisions"], "revisions_consistent": revisions["consistent"],
+            "hash_chained": chained, "streamed": streamed,
             "uploaded_or_api": raw - streamed, "max_sequence": max_seq or 0,
             "period": {"first_event": _iso(lo), "last_event": _iso(hi)},
             "integrity_head": head[0] if head else None, "sources": sources,
-            "consistent": raw == normalized == chained}
+            "consistent": raw == originals and normalized == chained and revisions["consistent"]}
 
 
 def reconcile(verify: bool = True) -> Dict[str, Any]:
@@ -78,7 +84,7 @@ def reconcile(verify: bool = True) -> Dict[str, Any]:
     delivery = DeliveryLedger.verify() if verify else None
     problems = []
     if not pipe["consistent"]:
-        problems.append("archive, normalised events and hash chain differ in size")
+        problems.append("archive, normalised events, re-parse revisions and hash chain do not add up")
     if integrity is not None and not integrity["is_valid"]:
         problems.append(f"integrity chain failed verification ({integrity['failed_records']} records)")
     if delivery is not None and not delivery["is_valid"]:

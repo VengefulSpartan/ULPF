@@ -25,6 +25,7 @@
 7. [REST API Reference Matrix](#7-rest-api-reference-matrix)
 8. [Installation, Startup & Verification Guide](#8-installation-startup--verification-guide)
 9. [Plug-and-Play Connectors: Log Sources → TRACELOG → SIEM / Observability](#9-plug-and-play-connectors)
+10. [Log Formats TRACELOG Has Never Seen: Detect, Learn, Approve, Re-parse](#10-log-formats-tracelog-has-never-seen)
 
 ---
 
@@ -437,6 +438,8 @@ Conventional SIEMs require tedious manual regex authoring or brittle Grok patter
 
 > **Strict Governance Principle**: ULPF **never** silently approves an untested parser. A candidate parser must pass test execution before promotion to active status.
 
+> **Formats nobody wrote a parser for** are handled end to end in [section 10](#10-log-formats-tracelog-has-never-seen): detected as formats, learned from hundreds of lines, approved by a named reviewer, and applied to past lines as chained revisions.
+
 ---
 
 ### USP 2: Chain-of-Custody Cryptographic Integrity
@@ -750,3 +753,15 @@ TRACELOG runs as the layer between the devices that produce perimeter logs and t
 
 **Live demo with a real sensor.** `docker compose -f docker-compose.devices.yml up` starts a Suricata sensor, a target web server and a traffic generator. TRACELOG tails `suricata-logs/eve.json` through the `suricata-eve` file input in the default configuration, so its alerts appear in the dashboard as Detection Findings as they happen.
 
+---
+
+## 10. Log Formats TRACELOG Has Never Seen
+
+A parser meeting an unfamiliar format can leave fields empty, or fill them with the wrong values. The second is the dangerous one, because a SIEM trusts what it is given. TRACELOG's rule is **empty rather than wrong**, in four layers (full detail in [docs/PARSING.md](docs/PARSING.md)):
+
+1. **Never confidently wrong.** Lines no pack recognises go to an evidence-based parser that fills a field only when the key names it (`srcIP`, `ip_client`, `destination-ip`) *and* the value is valid for it, or the line says the direction (`a:p -> b:q`, `from a to b`). Two addresses with nothing saying which is the source are left unassigned. Each event carries `unmapped.tracelog_parse` with `verified: false`, a confidence and a reason per field. Known packs are checked too: a pack producing impossible values (a firmware update shifted a column) is not passed on misaligned.
+2. **New formats are detected as formats.** Each line gets a structure-only format id; the registry counts lines per format, keeps samples, devices and first/last seen, and flags a known device whose format drifted. Parser Studio's **New log formats** tab lists them.
+3. **Learn from many lines, then approve.** A parser is learned from a format's samples (what each part of the line always is, the word before it, how its values are distributed), tested on held-out lines and compared with the generic parser. Fields that rest on position alone are marked *needs review*; the parser cannot be approved until a named person confirms or changes them. Approved parsers go live within seconds, without a restart, and their events say `verified: true` and who approved them.
+4. **Fix history without rewriting it.** Past lines of the format are re-parsed from the byte-for-byte archive as new chained events that name the event they supersede; the originals stay in the integrity chain, revisions are sent to the outputs, and reconciliation accounts for them.
+
+On 13 formats TRACELOG has no pack for, the generic parser went from 31 correct / 21 **wrong** fields to 83 correct / **0 wrong**; on generated WatchGuard, AWS VPC flow log and OpenSSH traffic, learned parsers then filled every remaining field on new lines (`python scripts/evaluate_unseen_formats.py --learned`).

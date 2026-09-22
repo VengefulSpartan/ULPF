@@ -10,7 +10,7 @@ def get_overview_kpis():
         cursor = conn.cursor()
         
         # 1. Total events
-        cursor.execute("SELECT COUNT(*) FROM normalized_events")
+        cursor.execute("SELECT COUNT(*) FROM normalized_events WHERE superseded_by IS NULL")
         total_events = cursor.fetchone()[0]
 
         # 2. Active sources
@@ -24,7 +24,8 @@ def get_overview_kpis():
         approved_parsers = cursor.fetchone()[0]
 
         # 4. Events by category
-        cursor.execute("SELECT category_name, COUNT(*) as cnt FROM normalized_events GROUP BY category_name")
+        cursor.execute("SELECT category_name, COUNT(*) as cnt FROM normalized_events WHERE superseded_by IS NULL "
+                       "GROUP BY category_name")
         cat_rows = cursor.fetchall()
         events_by_category = {r["category_name"]: r["cnt"] for r in cat_rows}
 
@@ -34,7 +35,7 @@ def get_overview_kpis():
             SELECT s.name, COUNT(n.id) as cnt
             FROM sources s
             LEFT JOIN raw_logs r ON s.id = r.source_id
-            LEFT JOIN normalized_events n ON r.id = n.raw_id
+            LEFT JOIN normalized_events n ON r.id = n.raw_id AND n.superseded_by IS NULL
             GROUP BY s.name
             """
         )
@@ -42,7 +43,7 @@ def get_overview_kpis():
         events_by_source = {r["name"]: r["cnt"] for r in src_rows}
 
         # 6. Events by severity
-        cursor.execute("SELECT severity, COUNT(*) as cnt FROM normalized_events GROUP BY severity")
+        cursor.execute("SELECT severity, COUNT(*) as cnt FROM normalized_events WHERE superseded_by IS NULL GROUP BY severity")
         sev_rows = cursor.fetchall()
         events_by_severity = {r["severity"]: r["cnt"] for r in sev_rows}
 
@@ -53,6 +54,7 @@ def get_overview_kpis():
             FROM normalized_events n
             JOIN raw_logs r ON n.raw_id = r.id
             JOIN sources s ON r.source_id = s.id
+            WHERE n.superseded_by IS NULL
             ORDER BY n.sequence_num DESC
             LIMIT 10
             """

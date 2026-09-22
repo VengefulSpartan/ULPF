@@ -8,6 +8,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def no_learned_parsers_from_the_real_database(monkeypatch):
+    """Parsers someone approved in the local TRACELOG database must not change what tests parse. Tests that use
+    isolated_db (a different database) load that database's learned parsers as usual."""
+    import time
+
+    import backend.services.storage.db as db_module
+    from backend.services.parser_generation import learned
+    monkeypatch.setattr(learned, "RELOAD_SECONDS", 1e9)
+    monkeypatch.setattr(learned, "_state", {"specs": [], "signature": None, "checked": time.monotonic(),
+                                            "db": db_module.db})
+
+
 @pytest.fixture
 def isolated_db(tmp_path, monkeypatch):
     """A fresh SQLite database for code paths that use the module-level `db`."""
@@ -18,7 +31,8 @@ def isolated_db(tmp_path, monkeypatch):
     database = Database(db_path=tmp_path / "tracelog-test.db")
     monkeypatch.setattr(db_module, "db", database)
     monkeypatch.setattr(ledger_module, "db", database)
-    for mod in ("backend.api.connectors", "backend.api.sources", "backend.api.events", "backend.api.integrity"):
+    for mod in ("backend.api.connectors", "backend.api.sources", "backend.api.events", "backend.api.integrity",
+                "backend.api.parsers", "backend.api.analytics", "backend.api.export"):
         m = __import__(mod, fromlist=["db"])
         if hasattr(m, "db"):
             monkeypatch.setattr(m, "db", database)

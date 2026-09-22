@@ -10,7 +10,8 @@ router = APIRouter(prefix="/export", tags=["Export & Integrations"])
 def export_ocsf_json(limit: int = Query(1000, ge=1, le=5000)):
     with db.get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT normalized_json FROM normalized_events ORDER BY sequence_num ASC LIMIT ?", (limit,))
+        cursor.execute("SELECT normalized_json FROM normalized_events WHERE superseded_by IS NULL "
+                       "ORDER BY sequence_num ASC LIMIT ?", (limit,))
         rows = cursor.fetchall()
         events = [json.loads(r["normalized_json"]) for r in rows]
     
@@ -33,6 +34,7 @@ def export_csv(limit: int = Query(1000, ge=1, le=5000)):
             FROM normalized_events n
             JOIN raw_logs r ON n.raw_id = r.id
             JOIN sources s ON r.source_id = s.id
+            WHERE n.superseded_by IS NULL
             ORDER BY n.sequence_num ASC LIMIT ?
             """,
             (limit,)

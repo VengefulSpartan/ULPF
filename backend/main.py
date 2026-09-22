@@ -17,6 +17,7 @@ from backend.api.analytics import router as analytics_router
 from backend.api.export import router as export_router
 from backend.api.connectors import router as connectors_router
 from backend.api.audit import router as audit_router
+from backend.api.formats import router as formats_router
 from backend.api.receivers import router as receivers_router
 
 
@@ -58,6 +59,7 @@ app.include_router(analytics_router, prefix=settings.API_PREFIX)
 app.include_router(export_router, prefix=settings.API_PREFIX)
 app.include_router(connectors_router, prefix=settings.API_PREFIX)
 app.include_router(audit_router, prefix=settings.API_PREFIX)
+app.include_router(formats_router, prefix=settings.API_PREFIX)
 app.include_router(receivers_router)
 
 @app.get("/health")

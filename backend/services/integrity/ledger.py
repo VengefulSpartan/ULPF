@@ -1,5 +1,6 @@
 import time
 import json
+import threading
 import sqlite3
 from typing import Optional, List, Dict, Any, Tuple
 from backend.services.storage.db import db
@@ -14,6 +15,10 @@ class IntegrityLedger:
     Cryptographic Hash Chain Ledger (USP 2: Chain-of-Custody Integrity).
     Enforces transaction-safe sequential linking and strict tamper verification.
     """
+
+    # Held around every transaction that appends to the chain (stream batches, single-line API ingestion,
+    # re-parsing), so two writers in this process never read the same chain head.
+    write_lock = threading.RLock()
 
     @classmethod
     def get_latest_entry(cls, conn: sqlite3.Connection) -> Optional[Dict[str, Any]]:

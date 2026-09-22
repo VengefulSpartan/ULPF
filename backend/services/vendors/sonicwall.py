@@ -16,12 +16,25 @@ _DETECTION_WORDS = ("ips ", "intrusion", "malware", "anti-virus", "gav", "botnet
 
 
 def _endpoint(value: Optional[str]):
+    """src/dst are IP:PORT:IFACE; the port may be empty ("172.16.2.2::X0") and IPv6 has its own colons."""
     if not value:
         return None, None, None
+    import ipaddress
+    parts = value.split(":")
+    if len(parts) in (2, 3):
+        try:
+            ipaddress.ip_address(parts[0])
+            return parts[0], to_int(parts[1]) if parts[1] else None, (parts[2] or None) if len(parts) == 3 else None
+        except ValueError:
+            pass
     m = _EP.match(value)
-    if not m:
+    if m:
+        return m.group(1), to_int(m.group(2)), m.group(3)
+    try:
+        ipaddress.ip_address(value)
         return value, None, None
-    return m.group(1), to_int(m.group(2)), m.group(3)
+    except ValueError:
+        return None, None, None  # not an address (e.g. an object name): kept in the vendor fields
 
 
 def detect(env: Envelope) -> bool:
