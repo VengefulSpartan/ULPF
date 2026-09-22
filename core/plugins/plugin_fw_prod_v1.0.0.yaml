@@ -1,6 +1,0 @@
-parser_id: plugin_fw_prod
-version: 1.0.0
-status: confirmed_active
-template_mined: 2026-09-15T18:00:00Z [FW-PROD-01] Connection from 10.0.0.15:54321
-  to 198.51.100.88:443 status DENY bytes 1200
-field_mappings: []
