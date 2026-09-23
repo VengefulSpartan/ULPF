@@ -109,7 +109,11 @@ def key_words(key: str) -> List[str]:
             else:
                 parts.append(rest)
                 rest = ""
-        words += parts if all(p in GLUED for p in parts[:-1]) else [w]
+        # a split counts only when every piece is a known word. Accepting any remainder read
+        # "device" as d + evice, and "d" means destination: device_ip became a destination address,
+        # sensor_ip and system_ip source addresses, EventData.IpAddress a destination. Those are the
+        # wrong fields this parser exists not to produce.
+        words += parts if all(p in GLUED for p in parts) else [w]
     return words
 
 
