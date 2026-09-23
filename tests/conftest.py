@@ -26,8 +26,10 @@ def isolated_db(tmp_path, monkeypatch):
     """A fresh SQLite database for code paths that use the module-level `db`."""
     import backend.services.integrity.ledger as ledger_module
     import backend.services.storage.db as db_module
+    from backend.services.analytics.quality import forget_checked
     from backend.services.storage.db import Database
 
+    forget_checked()   # the dashboard remembers which events it has already checked, per database
     database = Database(db_path=tmp_path / "tracelog-test.db")
     monkeypatch.setattr(db_module, "db", database)
     monkeypatch.setattr(ledger_module, "db", database)

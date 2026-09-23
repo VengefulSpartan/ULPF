@@ -3,6 +3,7 @@ import json
 import threading
 import sqlite3
 from typing import Optional, List, Dict, Any, Tuple
+from backend.services import jsonio
 from backend.services.storage.db import db
 from backend.services.integrity.hasher import Hasher
 from backend.models.integrity import (
@@ -32,31 +33,54 @@ class IntegrityLedger:
         return None
 
     @classmethod
+    def chain_head(cls, conn: sqlite3.Connection) -> Tuple[int, str]:
+        """(sequence number, record hash) of the last chained event; the genesis pair when empty.
+
+        A batch reads this once, under the write lock, and then links its events in memory: the
+        chain is the same, but the head is not re-read from SQLite for every line.
+        """
+        latest = cls.get_latest_entry(conn)
+        if latest is None:
+            return 0, Hasher.GENESIS_PREV_HASH
+        return latest["sequence_num"], latest["record_hash"]
+
+    @classmethod
+    def link(cls, seq_num: int, prev_hash: str, raw_hash: str,
+             normalized_data: Dict[str, Any] | str) -> str:
+        """The record hash for one event: H(prev : seq : raw_hash : canonical_json). No database."""
+        return Hasher.compute_record_hash(prev_hash, seq_num, raw_hash, normalized_data)
+
+    @classmethod
+    def insert_links(cls, conn: sqlite3.Connection, rows: List[Tuple[Any, ...]]) -> None:
+        """Write already-linked ledger rows (sequence_num, event_id, raw_id, raw_hash, record_hash,
+        prev_hash) in one statement, inside the caller's transaction."""
+        conn.executemany(
+            "INSERT INTO integrity_ledger (sequence_num, event_id, raw_id, raw_hash, record_hash, prev_hash, "
+            "timestamp) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))", rows)
+
+    @classmethod
     def append_event(
         cls,
         conn: sqlite3.Connection,
         event_id: str,
         raw_id: str,
         raw_hash: str,
-        normalized_data: Dict[str, Any]
+        normalized_data: Dict[str, Any],
+        head: Optional[Tuple[int, str]] = None
     ) -> Tuple[int, str, str]:
         """
         Atomically appends an event to the ledger within an existing SQLite transaction.
+        `head` is the chain head the caller already read (batches pass it; single lines do not).
         Returns: (sequence_num, prev_hash, record_hash)
         """
         cursor = conn.cursor()
-        
+
         # Get latest entry under active write transaction
-        latest = cls.get_latest_entry(conn)
-        if latest is None:
-            seq_num = 1
-            prev_hash = Hasher.GENESIS_PREV_HASH
-        else:
-            seq_num = latest["sequence_num"] + 1
-            prev_hash = latest["record_hash"]
+        last_seq, prev_hash = head if head is not None else cls.chain_head(conn)
+        seq_num = last_seq + 1
 
         # Calculate record hash
-        record_hash = Hasher.compute_record_hash(prev_hash, seq_num, raw_hash, normalized_data)
+        record_hash = cls.link(seq_num, prev_hash, raw_hash, normalized_data)
 
         # Insert into ledger
         cursor.execute(
@@ -184,7 +208,7 @@ class IntegrityLedger:
                 record_failed = True
             else:
                 try:
-                    norm_dict = json.loads(norm_json_str)
+                    norm_dict = jsonio.loads(norm_json_str)
                     recomputed_record_hash = Hasher.compute_record_hash(
                         stored_prev_hash, seq_num, raw_hash, norm_dict
                     )

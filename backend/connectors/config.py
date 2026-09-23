@@ -137,7 +137,9 @@ class Output(BaseModel):
 
 
 class Pipeline(BaseModel):
-    batch_size: int = 500
+    # 1000 lines per transaction is where throughput stops improving and latency starts to hurt
+    # (scripts/benchmark.py measures the curve); flush_seconds bounds the wait when traffic is light
+    batch_size: int = 1000
     flush_seconds: float = 0.5
     queue_size: int = 200000
 

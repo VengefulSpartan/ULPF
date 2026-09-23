@@ -21,8 +21,10 @@ import ipaddress
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.services import timefmt
 from backend.services.vendors.common import (
     BASE_EVENT, DETECTION_FINDING, IANA_PROTOCOLS, NA_REFUSE, NA_TRAFFIC, NETWORK_ACTIVITY, AUTHENTICATION, event,
 )
@@ -89,6 +91,7 @@ _NOT_USERS = {"-", "n/a", "na", "none", "null", "unknown", "success", "succeeded
 AUTH_WORDS = re.compile(r"\b(log ?in|log ?on|logon|login|auth\w*|sign-?in|password|sslvpn|vpn)\b", re.I)
 
 
+@lru_cache(maxsize=4096)
 def key_words(key: str) -> List[str]:
     s = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", key)          # camelCase
     s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", s)        # IPAddress
@@ -110,8 +113,9 @@ def key_words(key: str) -> List[str]:
     return words
 
 
+@lru_cache(maxsize=4096)
 def key_role(key: str) -> Tuple[Optional[str], float, str]:
-    """(role, confidence, reason) for a field name."""
+    """(role, confidence, reason) for a field name. Cached: a format sends the same names every line."""
     k = key.strip()
     low = k.lower()
     last = low.split(".")[-1]
@@ -202,20 +206,16 @@ def as_time(v: Any, allow_epoch: bool = True) -> Optional[str]:
         dt = datetime.fromtimestamp(n, tz=timezone.utc)
         return dt.isoformat() if _plausible(dt) else None
     s2 = re.sub(r"\s+", " ", s)
-    for fmt in _TIME_FORMATS:
-        try:
-            dt = datetime.strptime(s2, fmt)
-        except ValueError:
-            continue
+    # the format that read this shape of timestamp before is tried first (backend/services/timefmt.py)
+    hit = timefmt.parse_first(s2, _TIME_FORMATS, lambda fmt: datetime.strptime(s2, fmt))
+    if hit:
+        dt = hit[1]
         dt = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc).isoformat() if _plausible(dt) else None
-    for fmt in _YEARLESS:
-        try:
-            dt = datetime.strptime(s2, fmt)
-        except ValueError:
-            continue
+    hit = timefmt.parse_first(s2, _YEARLESS, lambda fmt: datetime.strptime(s2, fmt))
+    if hit:
         now = datetime.now(timezone.utc)
-        dt = dt.replace(year=now.year, tzinfo=timezone.utc)
+        dt = hit[1].replace(year=now.year, tzinfo=timezone.utc)
         if dt > now + timedelta(days=2):  # a December line read in January
             dt = dt.replace(year=now.year - 1)
         return dt.isoformat()

@@ -2,6 +2,7 @@ import json
 import io
 import csv
 from fastapi import APIRouter, Response, Query
+from backend.services import jsonio
 from backend.services.storage.db import db
 from backend.services.normalization.ocsf_export import to_ocsf
 
@@ -15,7 +16,7 @@ def export_ocsf_json(limit: int = Query(1000, ge=1, le=5000)):
                        "ORDER BY sequence_num ASC LIMIT ?", (limit,))
         rows = cursor.fetchall()
         # strict OCSF 1.1.0, exactly as the outputs send it (epoch-ms time, type_uid, finding_info, observables)
-        events = [to_ocsf(json.loads(r["normalized_json"])) for r in rows]
+        events = [to_ocsf(jsonio.loads(r["normalized_json"])) for r in rows]
     
     json_bytes = json.dumps(events, indent=2).encode("utf-8")
     return Response(

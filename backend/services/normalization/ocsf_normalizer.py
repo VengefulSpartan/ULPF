@@ -1,10 +1,41 @@
-import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Tuple, Optional
 from backend.models.event import (
     OCSFEvent, Metadata, ProductMetadata, RawRef,
     Endpoint, ConnectionInfo, Traffic, User, Finding
 )
+from backend.services import timefmt
+
+
+class IndexedFields(dict):
+    """
+    A parsed line, with its field names indexed in lower case.
+
+    ``find_first`` looks a field up under a dozen vendor spellings (src, srcip, source_ip,
+    saddr, ...). Scanning the dict once per spelling meant lower-casing every key of every
+    line dozens of times; the index is built once per line instead and the lookups are
+    plain dict hits. First value wins, which is the order the scan used.
+    """
+    __slots__ = ("_lower",)
+
+    def __init__(self, data: Dict[str, Any]):
+        super().__init__(data)
+        self._lower = None
+
+    def lower_index(self) -> Dict[str, Any]:
+        if self._lower is None:
+            index: Dict[str, Any] = {}
+            for k, v in self.items():
+                if v is not None:
+                    key = k.lower() if isinstance(k, str) else str(k).lower()
+                    if key not in index:
+                        index[key] = v
+            self._lower = index
+        return self._lower
+
+    def __setitem__(self, key, value):
+        self._lower = None
+        super().__setitem__(key, value)
 
 class OCSFNormalizer:
     """
@@ -42,14 +73,21 @@ class OCSFNormalizer:
 
     @classmethod
     def find_first(cls, data: Dict[str, Any], aliases: list) -> Optional[Any]:
+        """First alias present in the line, exact spelling first, then any casing of it."""
+        index = data.lower_index() if isinstance(data, IndexedFields) else None
         for alias in aliases:
-            # Check exact match
-            if alias in data and data[alias] is not None:
-                return data[alias]
-            # Check case-insensitive
-            for k, v in data.items():
-                if k.lower() == alias.lower() and v is not None:
-                    return v
+            value = data.get(alias)
+            if value is not None:
+                return value
+            low = alias.lower()
+            if index is not None:
+                value = index.get(low)
+                if value is not None:
+                    return value
+            else:
+                for k, v in data.items():
+                    if v is not None and k.lower() == low:
+                        return v
         return None
 
     SYSLOG_SEVERITY = {0: (5, "Critical"), 1: (5, "Critical"), 2: (5, "Critical"), 3: (4, "High"),
@@ -111,65 +149,63 @@ class OCSFNormalizer:
             return "alert", "alert"
         return a, a
 
+    TIME_FORMATS = ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S",
+                    "%Y-%m-%d %H:%M:%S", "%b %d %H:%M:%S", "%b  %d %H:%M:%S")
+
+    @classmethod
+    def _read_time(cls, raw_ts: Any) -> Optional[datetime]:
+        """The timestamp as a datetime, or None when no known format reads it."""
+        try:
+            val = float(raw_ts)
+        except (ValueError, TypeError):
+            pass
+        else:
+            try:
+                return datetime.fromtimestamp(val / 1000.0 if val > 1e11 else val, tz=timezone.utc)
+            except (ValueError, OSError, OverflowError):
+                return None
+        text = str(raw_ts).strip()
+        # the format that read this shape before is tried first (backend/services/timefmt.py)
+        hit = timefmt.parse_first(text, cls.TIME_FORMATS, lambda fmt: datetime.strptime(text, fmt))
+        return hit[1] if hit else None
+
+    @classmethod
+    def read_time(cls, raw_ts: Any) -> Tuple[str, int, bool]:
+        """(ISO 8601, epoch ms, whether the device's own timestamp was readable)."""
+        dt = cls._read_time(raw_ts) if raw_ts else None
+        if dt is None:
+            now = datetime.now(timezone.utc)
+            return now.isoformat(), int(now.timestamp() * 1000), False
+        iso, epoch = cls._as_iso(dt)
+        return iso, epoch, True
+
+    @classmethod
+    def _as_iso(cls, dt: datetime) -> Tuple[str, int]:
+        if dt.tzinfo is None:
+            # a format without a year (BSD syslog "Sep 20 14:00:15") parses as 1900
+            if dt.year == 1900:
+                dt = dt.replace(year=datetime.now(timezone.utc).year)
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat(), int(dt.timestamp() * 1000)
+
     @classmethod
     def parse_timestamp(cls, raw_ts: Any) -> Tuple[str, int]:
         """Returns (ISO 8601 string, epoch milliseconds)"""
         now = datetime.now(timezone.utc)
-        if not raw_ts:
+        dt = cls._read_time(raw_ts) if raw_ts else None
+        if dt is None:
             return now.isoformat(), int(now.timestamp() * 1000)
-
-        # Epoch seconds or milliseconds
-        try:
-            val = float(raw_ts)
-            if val > 1e11: # milliseconds
-                dt = datetime.fromtimestamp(val / 1000.0, tz=timezone.utc)
-            else:
-                dt = datetime.fromtimestamp(val, tz=timezone.utc)
-            return dt.isoformat(), int(dt.timestamp() * 1000)
-        except (ValueError, TypeError, OSError):
-            pass
-
-        # ISO string parsing
-        s = str(raw_ts).strip()
-        for fmt in (
-            "%Y-%m-%dT%H:%M:%S.%f%z",
-            "%Y-%m-%dT%H:%M:%SZ",
-            "%Y-%m-%dT%H:%M:%S%z",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%d %H:%M:%S",
-            "%b %d %H:%M:%S",
-            "%b  %d %H:%M:%S",
-        ):
-            try:
-                dt = datetime.strptime(s, fmt)
-                if dt.tzinfo is None:
-                    # If format doesn't have year (like BSD syslog '%b %d %H:%M:%S')
-                    if dt.year == 1900:
-                        dt = dt.replace(year=now.year)
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt.isoformat(), int(dt.timestamp() * 1000)
-            except ValueError:
-                continue
-
-        return now.isoformat(), int(now.timestamp() * 1000)
+        if dt.tzinfo is None:
+            # a format without a year (BSD syslog "Sep 20 14:00:15") parses as 1900
+            if dt.year == 1900:
+                dt = dt.replace(year=now.year)
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat(), int(dt.timestamp() * 1000)
 
     @classmethod
     def _parsed_ok(cls, raw_ts: Any) -> bool:
         """True when parse_timestamp can read raw_ts (it falls back to the current time otherwise)."""
-        try:
-            float(raw_ts)
-            return True
-        except (ValueError, TypeError):
-            pass
-        s = str(raw_ts).strip()
-        for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S",
-                    "%Y-%m-%d %H:%M:%S", "%b %d %H:%M:%S", "%b  %d %H:%M:%S"):
-            try:
-                datetime.strptime(s, fmt)
-                return True
-            except ValueError:
-                continue
-        return False
+        return cls._read_time(raw_ts) is not None
 
     @classmethod
     def normalize(
@@ -182,7 +218,7 @@ class OCSFNormalizer:
         product: str = "Network Device",
         sequence_num: int = 1
     ) -> OCSFEvent:
-        data = dict(parsed_data)
+        data = IndexedFields(parsed_data)
         unmapped = {}
 
         # 1. Determine Class UID
@@ -281,8 +317,8 @@ class OCSFNormalizer:
 
         # 6. Timestamp
         raw_ts = cls.find_first(data, ["timestamp", "time", "date", "rt", "deviceReceiptTime", "start"])
-        iso_time, epoch_ms = cls.parse_timestamp(raw_ts)
-        time_source = "device" if raw_ts is not None and cls._parsed_ok(raw_ts) else "received"
+        iso_time, epoch_ms, from_device = cls.read_time(raw_ts)
+        time_source = "device" if from_device else "received"
 
         # 7. User & Finding
         user_obj = User(name=str(user_val)) if user_val else None

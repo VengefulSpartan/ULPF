@@ -1,9 +1,17 @@
 import json
+import re
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional, Dict, Any
 from backend.services.storage.db import db
 
 router = APIRouter(prefix="/events", tags=["Log Explorer & Events"])
+
+# a word, address, hostname or user name: what the full-text index can look up directly
+FTS_TOKEN = re.compile(r"[\w.:/@-]{2,64}")
+
+
+def _has_search_index(conn) -> bool:
+    return bool(conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'raw_search'").fetchone())
 
 @router.get("")
 def list_events(
@@ -31,9 +39,20 @@ def list_events(
         query += current
 
         if search:
-            query += " AND (r.raw_text LIKE ? OR n.normalized_json LIKE ?)"
-            term = f"%{search}%"
-            params.extend([term, term])
+            token = FTS_TOKEN.fullmatch(search.strip())
+            if token and _has_search_index(conn):
+                # the archived lines are in a full-text index, so this is a lookup rather than a
+                # scan of every stored line. "10.0.1.15" is matched as a phrase (the tokenizer
+                # splits on the dots) and as a prefix, so "explo" still finds "exploit". It
+                # searches the archived line, which is where the values come from; the boxes
+                # beside it filter on the OCSF fields.
+                term = search.strip().replace('"', '""')
+                query += " AND r.rowid IN (SELECT rowid FROM raw_search WHERE raw_search MATCH ?)"
+                params.append(f'"{term}"*')
+            else:
+                query += " AND (r.raw_text LIKE ? OR n.normalized_json LIKE ?)"
+                term = f"%{search}%"
+                params.extend([term, term])
         
         if source_id:
             query += " AND r.source_id = ?"
@@ -86,8 +105,17 @@ def list_events(
                 "superseded_by": r["superseded_by"]
             })
 
-        # Total count
-        cursor.execute("SELECT COUNT(*) FROM normalized_events n WHERE 1=1" + current)
+        # Total count. The index is named on purpose: left to its own statistics SQLite reads every
+        # row of the table for this (108 ms at 100k events), while counting the partial index of
+        # current events takes about a millisecond.
+        if current:
+            try:
+                cursor.execute("SELECT COUNT(*) FROM normalized_events n INDEXED BY idx_norm_events_current "
+                               "WHERE 1=1" + current)
+            except Exception:  # a database from before that index existed
+                cursor.execute("SELECT COUNT(*) FROM normalized_events n WHERE 1=1" + current)
+        else:
+            cursor.execute("SELECT COUNT(*) FROM normalized_events")
         total_count = cursor.fetchone()[0]
 
         return {

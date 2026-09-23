@@ -3,6 +3,8 @@ import re
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Iterable, Optional
 
+from backend.services import timefmt
+
 # OCSF class ids emitted by vendor packs (see OCSFNormalizer.CLASS_INFO)
 NETWORK_ACTIVITY = 4001
 AUTHENTICATION = 3002
@@ -56,21 +58,29 @@ def clean(value: Any) -> Optional[str]:
     return None if s in ("", "-", "N/A", "n/a", "None", "none") else s
 
 
+def _is_yearless(fmt: str) -> bool:
+    return "%Y" not in fmt and "%y" not in fmt and "%s" not in fmt
+
+
 def iso_from_formats(value: Optional[str], formats: Iterable[str], tz_offset: Optional[str] = None) -> Optional[str]:
     """Parse a vendor timestamp and return ISO 8601. Naive times get tz_offset (e.g. '+0530') or UTC."""
     if not value:
         return None
     text = re.sub(r"\s+", " ", value.strip())  # "Sep  1" (two spaces) is how syslog pads single-digit days
     now = datetime.now(timezone.utc)
-    for fmt in formats:
-        yearless = "%Y" not in fmt and "%y" not in fmt and "%s" not in fmt
-        try:
-            # a timestamp without a year (BSD syslog "Sep 20 14:00:15") is parsed with the current year
-            # attached, so it is not dated 1900 and Feb 29 parses in a leap year
-            dt = datetime.strptime(f"{now.year} {text}", f"%Y {fmt}") if yearless else datetime.strptime(text, fmt)
-        except ValueError:
-            continue
-        if yearless and dt.replace(tzinfo=timezone.utc) > now + timedelta(days=2):
+
+    def attempt(fmt: str) -> datetime:
+        # a timestamp without a year (BSD syslog "Sep 20 14:00:15") is parsed with the current year
+        # attached, so it is not dated 1900 and Feb 29 parses in a leap year
+        if _is_yearless(fmt):
+            return datetime.strptime(f"{now.year} {text}", f"%Y {fmt}")
+        return datetime.strptime(text, fmt)
+
+    # the winning format is remembered per timestamp shape, so a line costs one strptime, not one per format
+    hit = timefmt.parse_first(text, tuple(formats), attempt)
+    if hit:
+        fmt, dt = hit
+        if _is_yearless(fmt) and dt.replace(tzinfo=timezone.utc) > now + timedelta(days=2):
             dt = dt.replace(year=now.year - 1)  # a December line read in January
         if dt.tzinfo is None:
             tz = timezone.utc

@@ -1,6 +1,7 @@
 import hashlib
-import json
 from typing import Dict, Any
+
+from backend.services import jsonio
 
 class Hasher:
     """
@@ -28,7 +29,7 @@ class Hasher:
         - No extra whitespace (separators=(',', ':'))
         - UTF-8 deterministic encoding
         """
-        return json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        return jsonio.canonical(data)
 
     @classmethod
     def compute_record_hash(
