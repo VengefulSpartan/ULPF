@@ -30,7 +30,8 @@ from backend.services.parser_generation.learned import (
     ARROWS, CompiledSpec, cells, cell_regex, masked_cell, pattern_groups,
 )
 from backend.services.parsing.inference import (
-    AUTH_WORDS, EXACT, VALUE_CHECKS, _cef_severity, _unquote, as_action, as_ip, as_port, as_protocol, as_severity,
+    AUTH_WORDS, EXACT, KEYED_KINDS, VALUE_CHECKS, _cef_severity, _unquote, as_action, as_ip, as_port, as_protocol,
+    as_severity,
     as_time, fingerprint, infer, key_role, key_words, structure,
 )
 from backend.services.vendors.common import AUTHENTICATION, BASE_EVENT, DETECTION_FINDING, NETWORK_ACTIVITY
@@ -428,7 +429,7 @@ def propose_spec(lines: List[str]) -> Dict[str, Any]:
     n = len(parsed)
     spec: Dict[str, Any] = {"version": 1, "kind": kind, "delimiter": first_st["delimiter"], "app": fp["app"],
                             "samples_learned": n}
-    if kind in ("kv", "json", "cef", "leef"):
+    if kind in KEYED_KINDS:
         slots, anchor = _keyed_slots(parsed)
         _propose_keyed(slots, n)
         spec["anchor_keys"] = anchor

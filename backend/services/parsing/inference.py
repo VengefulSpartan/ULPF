@@ -25,6 +25,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.services import timefmt
+from backend.services.parsing.xmlpairs import looks_like_xml, xml_pairs
 from backend.services.vendors.common import (
     BASE_EVENT, DETECTION_FINDING, IANA_PROTOCOLS, NA_REFUSE, NA_TRAFFIC, NETWORK_ACTIVITY, AUTHENTICATION, event,
 )
@@ -294,14 +295,22 @@ def _flatten(obj: Any, prefix: str = "") -> List[Tuple[str, Any]]:
     return out
 
 
+# structures read as key/value pairs; the rest (delimited, text) are read by position
+KEYED_KINDS = ("kv", "json", "xml", "cef", "leef")
+
+
 def structure(body: str) -> Dict[str, Any]:
-    """kind: json | cef | leef | kv | delimited | text, with key/value pairs and the free text left over."""
+    """kind: json | xml | cef | leef | kv | delimited | text, with key/value pairs and the free text left over."""
     b = body.strip()
     if b.startswith("{") and b.endswith("}"):
         try:
             return {"kind": "json", "delimiter": None, "pairs": _flatten(json.loads(b)), "text": "", "prefix": ""}
         except ValueError:
             pass
+    if b.startswith("<") and looks_like_xml(b):
+        pairs = xml_pairs(b)
+        if pairs:
+            return {"kind": "xml", "delimiter": None, "pairs": pairs, "text": "", "prefix": ""}
     for tag, kind in (("CEF:", "cef"), ("LEEF:", "leef")):
         if tag in b:
             from backend.services.parsing.cef_parser import CEFParser
@@ -391,13 +400,13 @@ def fingerprint(st: Dict[str, Any], env: Envelope) -> Dict[str, Any]:
     """
     The line's format, from its structure and never from its values: lines of one format get
     the same id whatever addresses, ports, users or times they carry.
-      key=value, JSON, CEF, LEEF   kind, delimiter, app and the key names
+      key=value, JSON, XML, CEF, LEEF   kind, delimiter, app and the key names
       delimited (CSV, TSV)         delimiter, number of columns and app
       free text                    app and the message's tokens with values masked
                                    (<IP>, <N>, <HOST>, <ACTION>, <PROTO>, ...)
     """
     app = re.sub(r"\d+", "<N>", env.app or "")
-    if st["kind"] in ("kv", "json", "cef", "leef"):
+    if st["kind"] in KEYED_KINDS:
         keys = [k for k, _ in st["pairs"]][:MAX_KEYS]
         template = f"{st['kind']}{' (' + repr(st['delimiter']) + ')' if st['delimiter'] else ''} keys: " \
                    f"{', '.join(keys)}"
