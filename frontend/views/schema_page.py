@@ -2,19 +2,41 @@ import streamlit as st
 import json
 import pandas as pd
 
+from backend.services.normalization.ocsf_export import OCSF_VERSION
+
+
 def render_schema():
     st.markdown("## Schema Explorer")
-    st.caption("OCSF (Open Cybersecurity Schema Framework) v1.1.0 Subset Specification")
+    st.caption(f"OCSF (Open Cybersecurity Schema Framework) v{OCSF_VERSION} Subset Specification")
 
     st.markdown(
-        """
-        TRACELOG normalizes heterogeneous perimeter telemetry into a standardized, analytics-ready OCSF v1.1.0 representation.
+        f"""
+        TRACELOG normalizes heterogeneous perimeter telemetry into a standardized, analytics-ready OCSF v{OCSF_VERSION} representation.
         Events map to three primary perimeter security classes:
         - **Class 4001**: Network Activity (Traffic flows, connections, ACL rules)
         - **Class 3002**: Authentication (VPN logons, user sessions, MFA verification)
         - **Class 2004**: Detection Finding (IDS/IPS signature alerts, exploit detections)
         """
     )
+
+    with st.expander(f"Why {OCSF_VERSION} and not the newest OCSF release?"):
+        st.markdown(
+            f"""
+            OCSF is past 1.9. TRACELOG emits **{OCSF_VERSION}** deliberately.
+
+            - **Amazon Security Lake reads OCSF 1.3 and earlier** for custom sources. It is the
+              strictest consumer we target, so it sets the ceiling; the Parquet output refuses to
+              write anything newer rather than fill a bucket the lake will not read.
+            - **SIEMs are not strict.** Splunk, Elastic, Sentinel, QRadar, Wazuh and Loki map our
+              fields themselves; none of them refuse an event for being 1.1 rather than 1.9.
+            - **The attributes our four classes require did not change between 1.1 and 1.3**, so
+              moving inside that range is a setting (`OCSF_VERSION`), not a rewrite — and the test
+              suite checks that events still validate at 1.2 and 1.3.
+
+            The reasoning, and what moving to a newer schema would take, is written down in
+            `docs/adr/0001-ocsf-version.md`.
+            """
+        )
 
     tab_classes, tab_fields, tab_sample = st.tabs(["🏛️ OCSF Classes", "📋 Field Dictionary & Mappings", "📄 Schema Example"])
 
@@ -30,7 +52,8 @@ def render_schema():
     with tab_fields:
         st.markdown("##### Standardized Attributes Dictionary")
         fields_data = [
-            {"Field Name": "metadata.version", "Type": "string", "Required": "Yes", "Description": "OCSF Schema version ('1.1.0')"},
+            {"Field Name": "metadata.version", "Type": "string", "Required": "Yes",
+             "Description": f"OCSF Schema version ('{OCSF_VERSION}')"},
             {"Field Name": "metadata.raw_ref.raw_hash", "Type": "string (hex)", "Required": "Yes", "Description": "SHA-256 hash of the exact original raw log bytes"},
             {"Field Name": "metadata.sequence_num", "Type": "integer", "Required": "Yes", "Description": "Monotonically increasing sequence number in hash ledger"},
             {"Field Name": "class_uid", "Type": "integer", "Required": "Yes", "Description": "OCSF class identifier (e.g. 4001)"},

@@ -5,6 +5,7 @@ from backend.models.event import (
     Endpoint, ConnectionInfo, Traffic, User, Finding
 )
 from backend.services import timefmt
+from backend.services.normalization import ocsf_export
 
 
 class IndexedFields(dict):
@@ -359,7 +360,7 @@ class OCSFNormalizer:
 
         # Metadata
         metadata = Metadata(
-            version="1.1.0",
+            version=ocsf_export.OCSF_VERSION,
             product=ProductMetadata(
                 vendor_name=str(data.get("vendor", vendor)),
                 name=str(data.get("product", product)),
