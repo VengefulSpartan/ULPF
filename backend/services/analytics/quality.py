@@ -112,7 +112,10 @@ def pipeline_counts(conn) -> Dict[str, Any]:
     events = conn.execute("SELECT COUNT(*) FROM normalized_events").fetchone()[0]
     chained = conn.execute("SELECT COUNT(*) FROM integrity_ledger").fetchone()[0]
     revisions = conn.execute("SELECT COUNT(*) FROM event_revisions").fetchone()[0]
-    streamed = conn.execute("SELECT COUNT(*) FROM raw_logs WHERE transport IS NOT NULL").fetchone()[0]
+    # uploads and API lines go through the same writer now and carry a transport too, so "streamed"
+    # means arrived over a network input or a tailed file
+    streamed = conn.execute("SELECT COUNT(*) FROM raw_logs WHERE transport IS NOT NULL "
+                            "AND transport NOT IN ('api', 'upload')").fetchone()[0]
     return {"raw_archived": raw, "events": events, "current_events": events - revisions, "revisions": revisions,
             "hash_chained": chained, "streamed": streamed,
             "consistent": raw == events - revisions and events == chained}

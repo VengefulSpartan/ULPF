@@ -113,7 +113,7 @@ class IntegrityLedger:
                 """
                 SELECT 
                     l.sequence_num, l.event_id, l.raw_id, l.raw_hash, l.record_hash, l.prev_hash,
-                    r.raw_text, n.normalized_json
+                    r.raw_text, r.raw_encoding, r.raw_hash_of, n.normalized_json
                 FROM integrity_ledger l
                 LEFT JOIN raw_logs r ON l.raw_id = r.id
                 LEFT JOIN normalized_events n ON l.event_id = n.id
@@ -171,7 +171,7 @@ class IntegrityLedger:
                 ))
                 record_failed = True
             else:
-                recomputed_raw_hash = Hasher.hash_raw_bytes(raw_text)
+                recomputed_raw_hash = Hasher.stored_raw_hash(raw_text, row["raw_encoding"], row["raw_hash_of"])
                 if recomputed_raw_hash != raw_hash:
                     issues.append(VerificationIssue(
                         sequence_num=seq_num,

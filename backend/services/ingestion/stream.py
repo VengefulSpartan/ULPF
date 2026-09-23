@@ -1,15 +1,22 @@
 """
-Batched, lossless ingestion for streamed logs (syslog, HEC, OTLP, files, Kafka).
+Batched, lossless ingestion — the one writer every ingest path goes through: streamed logs
+(syslog, HEC, OTLP, files, Kafka), file uploads, and lines sent to the API.
 
-Differences from the interactive single-line API path:
-- raw bytes are kept exactly: only transport framing (a trailing CR/LF) is
-  removed; bytes that are not valid UTF-8 are decoded as Latin-1, which maps
-  every byte to one character, and the encoding is recorded so the original
-  bytes can always be reproduced;
-- a line that fails to parse is still archived, hashed and chained (as an OCSF
-  Base Event carrying the parse error), so nothing received is ever dropped;
+What "lossless" means here, precisely (docs/adr/0002-raw-preservation.md):
+
+- the bytes of the line are kept exactly. The only thing removed is one line terminator —
+  LF or CRLF — which belongs to the transport, not the event, and which one it was is recorded
+  in raw_logs.raw_framing, so the bytes as they arrived can be rebuilt too;
+- bytes that are not valid UTF-8 are decoded as Latin-1, which maps every byte to one character,
+  and the encoding is recorded, so raw_text.encode(raw_encoding) is always the original bytes;
+- raw_hash is SHA-256 of those original bytes (raw_hash_of = 'bytes'), so the hash proves what
+  the device sent, not a re-encoding of it. Rows written before this carried a hash of the text's
+  UTF-8 form (raw_hash_of NULL); for UTF-8 lines the two are identical, and the verifier knows both;
+- a line that fails to parse is still archived, hashed and chained (as an OCSF Base Event carrying
+  the parse error), so nothing received is ever dropped;
 - a whole batch is written in one SQLite transaction;
-- the sending device is registered as a source automatically.
+- the sending device is registered as a source automatically, unless the caller already knows it
+  (FixedSource: uploads and the API).
 """
 import logging
 import re
@@ -61,6 +68,8 @@ class StoredEvent:
     source_name: str
     sequence_num: int
     normalized: Dict[str, Any]
+    format_detected: str = ""
+    raw_hash: str = ""
     _ocsf: Optional[Dict[str, Any]] = None
 
     @property
@@ -72,12 +81,28 @@ class StoredEvent:
         return self._ocsf
 
 
-def decode_raw(raw: bytes) -> Tuple[str, str]:
-    body = raw.rstrip(b"\r\n")
+def split_framing(raw: bytes) -> Tuple[bytes, str]:
+    """(the line's bytes, the terminator that framed it: 'CRLF', 'LF' or '').
+
+    Exactly one terminator is removed. A second one, or a CR on its own, is part of the line."""
+    if raw.endswith(b"\r\n"):
+        return raw[:-2], "CRLF"
+    if raw.endswith(b"\n"):
+        return raw[:-1], "LF"
+    return raw, ""
+
+
+def decode_body(body: bytes) -> Tuple[str, str]:
+    """Text and the encoding that reproduces the bytes: UTF-8 when valid, otherwise Latin-1."""
     try:
         return body.decode("utf-8"), "utf-8"
     except UnicodeDecodeError:
         return body.decode("latin-1"), "latin-1"
+
+
+def decode_raw(raw: bytes) -> Tuple[str, str]:
+    """Text and encoding of a received line, after its one line terminator."""
+    return decode_body(split_framing(raw)[0])
 
 
 _HOSTNAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,62}")
@@ -154,8 +179,8 @@ EVENT_INSERT = """INSERT INTO normalized_events (id, sequence_num, raw_id, class
    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"""
 
 RAW_INSERT = """INSERT INTO raw_logs (id, source_id, raw_text, raw_hash, ingested_at, format_detected, status,
-   raw_encoding, transport, input_name, peer_ip, received_at, format_id)
-   VALUES (?, ?, ?, ?, datetime('now'), ?, 'ingested', ?, ?, ?, ?, ?, ?)"""
+   raw_encoding, transport, input_name, peer_ip, received_at, format_id, raw_framing, raw_hash_of)
+   VALUES (?, ?, ?, ?, datetime('now'), ?, 'ingested', ?, ?, ?, ?, ?, ?, ?, 'bytes')"""
 
 
 def parser_pack_of(normalized: Dict[str, Any], fmt: str) -> str:
@@ -205,6 +230,22 @@ def note_format(conn, parsed: Dict[str, Any]) -> Optional[str]:
     return tp["format_id"]
 
 
+class FixedSource:
+    """Resolver for callers that already know which source the lines belong to (uploads, the API)."""
+
+    def __init__(self, source_id: str):
+        self.source_id = source_id
+        self._name: Optional[str] = None
+
+    def resolve(self, conn, rec: InboundRecord, parsed: Dict[str, Any], fmt: str) -> Tuple[str, str]:
+        if self._name is None:
+            row = conn.execute("SELECT name FROM sources WHERE id = ?", (self.source_id,)).fetchone()
+            if not row:
+                raise ValueError(f"no source with id {self.source_id}")
+            self._name = row["name"]
+        return self.source_id, self._name
+
+
 class StreamIngestor:
     OPTIMIZE_EVERY = 25   # batches between query-planner statistics refreshes
 
@@ -215,7 +256,8 @@ class StreamIngestor:
     def ingest(self, records: List[InboundRecord]) -> List[StoredEvent]:
         prepared = []
         for rec in records:
-            text, encoding = decode_raw(rec.raw)
+            body, framing = split_framing(rec.raw)
+            text, encoding = decode_body(body)
             if not text.strip():
                 continue
             try:
@@ -223,7 +265,7 @@ class StreamIngestor:
             except Exception as exc:  # never lose a line because a parser failed
                 logger.exception("parse failed")
                 fmt, parsed = "parse_error", {"_format": "parse_error", "parse_error": str(exc)}
-            prepared.append((rec, text, encoding, fmt, parsed))
+            prepared.append((rec, body, framing, text, encoding, fmt, parsed))
         if not prepared:
             return []
 
@@ -238,13 +280,13 @@ class StreamIngestor:
             # the chain head is read once for the batch and then carried in memory: the events are
             # linked in the same order, with the same hashes, without a query per line
             last_seq, prev_hash = IntegrityLedger.chain_head(conn)
-            for rec, text, encoding, fmt, parsed in prepared:
+            for rec, body, framing, text, encoding, fmt, parsed in prepared:
                 source_id, source_name = self.resolver.resolve(conn, rec, parsed, fmt)
                 raw_id, event_id = str(uuid.uuid4()), str(uuid.uuid4())
-                raw_hash = Hasher.hash_raw_bytes(text)
+                raw_hash = Hasher.hash_raw_bytes(body)          # the bytes as received, not a re-encoding
                 format_id = note_format(conn, parsed)
                 raw_rows.append((raw_id, source_id, text, raw_hash, fmt, encoding, rec.transport, rec.input_name,
-                                 rec.peer_ip, rec.received_at, format_id))
+                                 rec.peer_ip, rec.received_at, format_id, framing))
                 if format_id:
                     formats.append({"format_id": format_id, "tp": parsed["tracelog_parse"], "raw_id": raw_id,
                                     "raw_text": text, "source_name": source_name})
@@ -274,7 +316,8 @@ class StreamIngestor:
                 ledger_rows.append((seq, event_id, raw_id, raw_hash, record_hash, prev_hash))
                 last_seq, prev_hash = seq, record_hash
                 counts[source_id] = counts.get(source_id, 0) + 1
-                stored.append(StoredEvent(event_id, raw_id, source_id, source_name, seq, normalized))
+                stored.append(StoredEvent(event_id, raw_id, source_id, source_name, seq, normalized,
+                                          format_detected=fmt, raw_hash=raw_hash))
             conn.executemany(RAW_INSERT, raw_rows)
             conn.executemany(EVENT_INSERT, event_rows)
             IntegrityLedger.insert_links(conn, ledger_rows)

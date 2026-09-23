@@ -801,6 +801,16 @@ At 20,000 events, ingestion runs at **2,711 events/s** (before: 1,489); the diff
 maintenance as the database grows. One billion events a day is 11,574 events/s sustained — quote
 the rate your own hardware measures, and the multiplication.
 
+### What "lossless" means, precisely
+
+Every line — streamed, uploaded or sent to the API — goes through one writer that keeps its bytes
+exactly (UTF-8 when valid, otherwise Latin-1, which maps every byte, with the encoding stored), records
+the one line terminator the transport added so the bytes as received can be rebuilt, and hashes
+**the bytes received**, not a re-encoding of them. `/api/events/{id}` returns everything needed to
+check that yourself. The rule, and the one case it does not cover (whitespace inside HEC JSON
+envelopes), are in [`docs/adr/0002-raw-preservation.md`](docs/adr/0002-raw-preservation.md);
+`tests/test_lossless.py` holds it on every path.
+
 ### Why OCSF 1.1.0, when OCSF is past 1.9
 
 Deliberately, and written down in [`docs/adr/0001-ocsf-version.md`](docs/adr/0001-ocsf-version.md).
@@ -817,7 +827,7 @@ were, `tests/test_throughput.py` proves it, and the unseen-format score is uncha
 18 missed, **0 wrong**.
 
 To measure it on your own machine, and to set the project up on a machine that has never seen it,
-follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 147 passed), run, and the
+follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 197 passed), run, and the
 three benchmark commands including `-w N` for N ingest shards, each with its own hash chain.
 
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately

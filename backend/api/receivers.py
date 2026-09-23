@@ -92,7 +92,12 @@ async def hec_event(request: Request):
         return _hec_error("HEC is disabled", 1, 403)
     if not _authorised(request):
         return _hec_error("Invalid token", 4, 401)
-    body = (await _body(request)).decode("utf-8", errors="replace")
+    try:
+        # JSON is UTF-8 by definition. A body that is not is refused, so the sender keeps it and can
+        # retry, rather than accepted with its bytes replaced (docs/adr/0002-raw-preservation.md).
+        body = (await _body(request)).decode("utf-8")
+    except UnicodeDecodeError:
+        return _hec_error("Invalid data format: the body is not UTF-8", 6, 400)
     if not body.strip():
         return _hec_error("No data", 5, 400)
     records = []
@@ -103,7 +108,9 @@ async def hec_event(request: Request):
             ev = obj["event"]
             if isinstance(ev, dict) and isinstance(ev.get("_raw"), str):  # Cribl and Splunk-style wrapped events
                 ev = ev["_raw"]
-            raw = ev if isinstance(ev, str) else json.dumps(ev, separators=(",", ":"))
+            # a string event is kept verbatim; an object event as that object, keys in the order sent and
+            # non-ASCII kept as characters (the JSON parser does not keep the original whitespace)
+            raw = ev if isinstance(ev, str) else json.dumps(ev, separators=(",", ":"), ensure_ascii=False)
             hints = {k: str(obj[k]) for k in ("host", "source", "sourcetype") if obj.get(k)}
             if "host" in hints:
                 hints["hostname"] = hints["host"]

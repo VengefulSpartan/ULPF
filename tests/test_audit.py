@@ -142,9 +142,7 @@ def test_tampering_with_the_delivery_ledger_is_detected(estate, isolated_db, tam
 
 
 def test_events_from_the_upload_and_api_path_reach_the_outputs(estate, isolated_db, monkeypatch):
-    import backend.services.ingestion.pipeline as pipeline_module
     from backend.services.ingestion.pipeline import IngestionPipeline
-    monkeypatch.setattr(pipeline_module, "db", isolated_db)
     eng, switch = estate
     switch.up = True
     with isolated_db.get_connection() as conn:

@@ -12,12 +12,10 @@ def rca_db(tmp_path):
 
 def test_cross_source_rca_correlation(rca_db, monkeypatch):
     import backend.services.storage.db as db_module
-    import backend.services.ingestion.pipeline as pipe_module
     import backend.services.correlation.engine as corr_module
     import backend.services.integrity.ledger as ledger_module
 
     monkeypatch.setattr(db_module, "db", rca_db)
-    monkeypatch.setattr(pipe_module, "db", rca_db)
     monkeypatch.setattr(corr_module, "db", rca_db)
     monkeypatch.setattr(ledger_module, "db", rca_db)
 
@@ -31,16 +29,16 @@ def test_cross_source_rca_correlation(rca_db, monkeypatch):
     # 2. Ingest realistic multi-source sequence
     # Step 1: Fortinet VPN login
     vpn_log = 'date=2026-09-20 time=14:00:00 devname="FGT-VPN" type="vpn" action="login" status="success" user="contractor_bob" srcip=198.51.100.22 dstip=10.0.1.15'
-    pipe_module.IngestionPipeline.ingest_single_log(vpn_log, "src-vpn", "Fortinet", "FortiGate")
+    IngestionPipeline.ingest_single_log(vpn_log, "src-vpn", "Fortinet", "FortiGate")
 
     # Step 2: Palo Alto Firewall allowed connection
     # Device timestamps are now honoured, so every event in the sequence carries one.
     fw_log = 'CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|start|3|src=10.0.1.15 dst=192.168.1.50 spt=49152 dpt=445 proto=TCP act=allow deviceReceiptTime=2026-09-20T14:00:15Z'
-    pipe_module.IngestionPipeline.ingest_single_log(fw_log, "src-fw", "Palo Alto", "PAN-OS")
+    IngestionPipeline.ingest_single_log(fw_log, "src-fw", "Palo Alto", "PAN-OS")
 
     # Step 3: Suricata IDS Alert
     ids_log = '{"timestamp":"2026-09-20T14:00:45.000Z","src_ip":"10.0.1.15","dest_ip":"192.168.1.50","event_type":"alert","alert":{"action":"alerted","signature":"ET EXPLOIT EternalBlue SMB MS17-010","severity":"High"}}'
-    pipe_module.IngestionPipeline.ingest_single_log(ids_log, "src-ids", "Suricata", "Suricata")
+    IngestionPipeline.ingest_single_log(ids_log, "src-ids", "Suricata", "Suricata")
 
     # 3. Run Correlation
     incident = CorrelationEngine.run_correlation(pivot_ip="10.0.1.15")

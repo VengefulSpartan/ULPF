@@ -2,7 +2,7 @@ import json
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status
 from pydantic import BaseModel
 from typing import List, Optional
-from backend.services.ingestion.pipeline import IngestionPipeline
+from backend.services.ingestion.pipeline import IngestionPipeline, split_upload
 from backend.services.storage.db import db
 from backend.models.source import Source
 
@@ -55,12 +55,14 @@ async def ingest_file(
 ):
     try:
         content = await file.read()
-        lines = content.decode("utf-8", errors="replace").splitlines()
+        # bytes, not text: decoding with errors="replace" turned any byte that was not valid UTF-8
+        # into U+FFFD for good. The writer decodes each line itself and keeps every byte.
         res = IngestionPipeline.ingest_batch(
-            lines=lines,
+            lines=split_upload(content),
             source_id=source_id,
             source_vendor=source_vendor,
-            source_product=source_product
+            source_product=source_product,
+            transport="upload",
         )
         return res
     except Exception as e:
