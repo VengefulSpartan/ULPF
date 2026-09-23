@@ -4,6 +4,7 @@ Measure TRACELOG's throughput end to end, on a throwaway database.
     python scripts/benchmark.py                      # 20k events, batches of 500
     python scripts/benchmark.py -n 200000 -b 1000    # bigger run
     python scripts/benchmark.py --read               # also time search, dashboard and export
+    python scripts/benchmark.py -w 4                 # 4 shards in parallel, one chain each
     python scripts/benchmark.py --json               # machine-readable
 
 The corpus mixes what a perimeter really sends: lines vendor packs know (Cisco ASA,
@@ -22,6 +23,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any, Dict
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -78,6 +80,47 @@ def build_corpus(n: int, seed: int = 7):
         else:                # nothing parses this
             lines.append(f"{ts} kernel: [{r.random() * 10**5:.6f}] unexpected diagnostic blob {r.randint(1, 10**9)}")
     return lines
+
+
+def run_shard(args):
+    """One shard in its own process: its own database, its own chain, its own share of the lines."""
+    index, events, batch, directory = args
+    setup_database(Path(directory) / f"shard-{index}.db")
+    from backend.services.ingestion.stream import InboundRecord, StreamIngestor
+
+    ingestor = StreamIngestor()
+    lines = build_corpus(events, seed=7 + index)
+    started = time.perf_counter()
+    stored = 0
+    for i in range(0, len(lines), batch):
+        stored += len(ingestor.ingest([InboundRecord(raw=l.encode(), transport="syslog-udp", input_name=f"s{index}",
+                                                     peer_ip=f"192.0.2.{index + 1}")
+                                       for l in lines[i:i + batch]]))
+    return {"shard": index, "events": stored, "seconds": round(time.perf_counter() - started, 3)}
+
+
+def run_sharded(workers: int, events: int, batch: int) -> Dict[str, Any]:
+    """
+    Several ingest workers at once, each owning its own database and hash chain.
+
+    This is the sharded deployment measured honestly: nothing is shared between workers, so the
+    aggregate is what a machine of this size does, and each shard's chain verifies on its own.
+    """
+    import multiprocessing as mp
+
+    with tempfile.TemporaryDirectory() as directory:
+        jobs = [(i, events, batch, directory) for i in range(workers)]
+        started = time.perf_counter()
+        with mp.get_context("spawn").Pool(workers) as pool:
+            results = pool.map(run_shard, jobs)
+        wall = time.perf_counter() - started
+    total = sum(r["events"] for r in results)
+    # the shards ingest at the same time, so the rate is everything they stored divided by the
+    # longest shard, not by the wall clock, which also holds process start-up and corpus building
+    slowest = max(r["seconds"] for r in results)
+    return {"workers": workers, "events": total, "ingest_seconds": slowest, "wall_seconds": round(wall, 3),
+            "events_per_second": round(total / slowest), "per_day_millions": round(total / slowest * 86400 / 1e6, 1),
+            "per_shard": results}
 
 
 def setup_database(path: Path):
@@ -156,10 +199,28 @@ def main():
     ap = argparse.ArgumentParser(description="TRACELOG throughput benchmark")
     ap.add_argument("-n", "--events", type=int, default=20000)
     ap.add_argument("-b", "--batch", type=int, default=500)
+    ap.add_argument("-w", "--workers", type=int, default=1,
+                    help="ingest shards to run at once, each with its own database and chain")
     ap.add_argument("--db", default=None, help="database file to use (default: a temporary one)")
     ap.add_argument("--read", action="store_true", help="also time search, dashboard, export and verification")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
+
+    if args.workers > 1:
+        sharded = run_sharded(args.workers, args.events, args.batch)
+        if args.json:
+            print(json.dumps(sharded, indent=2))
+            return
+        print(f"\n{sharded['workers']} shards, {args.events:,} events each, batches of {args.batch}")
+        for r in sharded["per_shard"]:
+            print(f"   shard {r['shard']}   {r['events']:,} events in {r['seconds']}s "
+                  f"({round(r['events'] / r['seconds']):,} events/s)")
+        print(f"\naggregate {sharded['events']:,} events in {sharded['ingest_seconds']}s "
+              f"(wall clock including start-up: {sharded['wall_seconds']}s)")
+        print(f"          {sharded['events_per_second']:,} events/s  ->  "
+              f"{sharded['per_day_millions']}M/day on this machine")
+        print("          each shard keeps its own hash chain, so nothing is shared between them")
+        return
 
     tmp = tempfile.TemporaryDirectory()
     setup_database(Path(args.db) if args.db else Path(tmp.name) / "bench.db")
