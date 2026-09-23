@@ -9,14 +9,14 @@ fall through to the generic CEF / LEEF / syslog / key=value / JSON parsers.
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import checkpoint, cisco, fortinet, juniper, paloalto, pfsense, sonicwall, sophos
+from . import checkpoint, cisco, fortinet, juniper, paloalto, pfsense, sonicwall, sophos, windows
 from .envelope import Envelope, split_envelope
 from .ids import Snort, Suricata, Zeek
 
 logger = logging.getLogger("tracelog.vendors")
 
 PACKS: List[Any] = [
-    paloalto, fortinet, cisco, checkpoint, juniper, sophos, sonicwall, pfsense, Suricata, Zeek, Snort,
+    paloalto, fortinet, cisco, checkpoint, juniper, sophos, sonicwall, pfsense, Suricata, Zeek, Snort, windows,
 ]
 
 # Shown in the UI and README compatibility matrix.
@@ -43,10 +43,13 @@ SUPPORTED_SOURCES = [
     {"pack": Snort.NAME, "vendor": "Cisco", "product": "Snort 2 and Snort 3",
      "coverage": "fast and syslog alerts, alert_csv (Snort's columns and pfSense's), Snort 3 alert_json, and "
                  "the header line of a full-format alert"},
+    {"pack": windows.NAME, "vendor": "Microsoft", "product": "Windows Security events (Event XML)",
+     "coverage": "logon, failed logon, logoff, explicit-credential logon, Kerberos and NTLM authentication; "
+                 "other event ids kept as Base Events with their fields"},
     {"pack": "generic_cef", "vendor": "Any", "product": "ArcSight CEF (F5, Imperva, Trend Micro, Check Point, ...)",
      "coverage": "header and standard extension keys"},
     {"pack": "generic_leef", "vendor": "Any", "product": "IBM LEEF 1.0/2.0", "coverage": "header and attributes"},
-    {"pack": "generic", "vendor": "Any", "product": "RFC 3164/5424 syslog, key=value, JSON",
+    {"pack": "generic", "vendor": "Any", "product": "RFC 3164/5424 syslog, key=value, JSON, XML",
      "coverage": "common field names; everything else preserved in unmapped"},
 ]
 

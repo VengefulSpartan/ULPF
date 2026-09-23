@@ -9,7 +9,7 @@ wrong**.
 
 ```
 line ──► vendor pack ──► values valid? ──no──► learned parser ──► values valid? ──no──► generic parser
-            │ (11 packs)      │ yes                 │ (approved       │ yes              (evidence only,
+            │ (12 packs)      │ yes                 │ (approved       │ yes              (evidence only,
             │                 ▼                     │  in Studio)     ▼                   unverified)
             │              event                    │              event (verified)          │
             └── none claims the line ───────────────┴── none claims it ─────────────────────┘
@@ -31,6 +31,20 @@ and that its value is valid:
 | The value is valid for the field | an address field must hold an IP, a port 0 to 65535, a protocol a protocol name or IANA number, a time must parse and be plausible |
 | The line says the direction | `a:p -> b:q`, `from a to b` |
 | The syslog header | timestamp, host, and the RFC 5424 severity, where 0 is emergency and 7 is debug |
+
+It reads key/value pairs from key=value, JSON, CEF, LEEF and **XML** alike. XML is flattened
+into dotted paths the way nested JSON keys are, in either common layout — an element per field
+(`<src>10.1.1.5</src>`) or named data elements (`<Data Name="IpAddress">…</Data>`, the Windows
+layout) — with attributes as `element.attribute` (`backend/services/parsing/xmlpairs.py`). A
+document with a DOCTYPE or entity declarations, or over 64 KB, is not parsed as XML at all: a log
+event has no use for either, and they are how XML parsers are made to expand entities or fetch
+files. It is archived as text like any other line. Windows Security events have their own pack
+(`windows_security`), because the names alone do not say that a logon event's `IpAddress` is where
+the logon came from.
+
+Key names are split into words to find their meaning (`srcPort` → src port, `clientip` → client
+ip). A glued word is split only when every piece is a known word: accepting any remainder once
+read `device_ip` as d(estination) + evice + ip, and `sensor_ip` as a source address.
 
 What it does not do matters as much. Two addresses with nothing saying which is the
 source are **not** assigned; they are listed under `unassigned_ips`. A port with no address
@@ -56,7 +70,7 @@ values (`inference.fingerprint`).
 
 | Structure | What decides the format |
 |---|---|
-| key=value, JSON, CEF, LEEF | kind, delimiter, syslog app and key names |
+| key=value, JSON, XML, CEF, LEEF | kind, delimiter, syslog app and key names |
 | delimited (CSV, TSV) | delimiter, number of columns, app |
 | free text | app and the tokens with values masked: `<IP>`, `<N>`, `<HOST>`, `<ACTION>`, `<PROTO>`, ... |
 

@@ -31,9 +31,10 @@ In the commands below, `TRACELOG_IP` is the TRACELOG server's address. Ports: sy
 | `suricata_eve` | OISF | Suricata EVE JSON | alerts as findings; flow, DNS, HTTP, TLS and other protocol events |
 | `zeek_json` | Zeek | Zeek JSON logs | conn and notice logs |
 | `snort_alert` | Cisco | Snort 2 and Snort 3 | fast and syslog alerts, alert_csv (Snort's columns and pfSense's), Snort 3 alert_json, and the header line of a full-format alert |
+| `windows_security` | Microsoft | Windows Security events (Event XML) | logon, failed logon, logoff, explicit-credential logon, Kerberos and NTLM authentication; other event ids kept as Base Events with their fields |
 | `generic_cef` | Any | ArcSight CEF (F5, Imperva, Trend Micro, Check Point, ...) | header and standard extension keys |
 | `generic_leef` | Any | IBM LEEF 1.0/2.0 | header and attributes |
-| `generic` | Any | RFC 3164/5424 syslog, key=value, JSON | common field names; everything else preserved in unmapped |
+| `generic` | Any | RFC 3164/5424 syslog, key=value, JSON, XML | common field names; everything else preserved in unmapped |
 
 Lines no pack recognises are still archived, hash-chained and forwarded. They are parsed by an evidence-based parser that fills only fields it can prove (the event says `verified: false`), grouped into formats, and listed in Parser Studio's New log formats tab, where a parser is learned from their samples, approved and applied to past lines; see [PARSING.md](PARSING.md).
 

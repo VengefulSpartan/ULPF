@@ -23,7 +23,8 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.services.parsing.inference import (
-    AUTH_WORDS, VALUE_CHECKS, _cef_severity, _unquote, as_action, mask_token, structure, syslog_severity_label, tokens,
+    AUTH_WORDS, KEYED_KINDS, VALUE_CHECKS, _cef_severity, _unquote, as_action, mask_token, structure,
+    syslog_severity_label, tokens,
 )
 from backend.services.vendors.common import (
     AUTHENTICATION, BASE_EVENT, DETECTION_FINDING, NA_REFUSE, NA_TRAFFIC, NETWORK_ACTIVITY, event,
@@ -158,7 +159,7 @@ class CompiledSpec:
     def score(self, st: Dict[str, Any], app: str, line_cells: Optional[List[str]] = None) -> float:
         if st["kind"] != self.kind:
             return 0.0
-        if self.kind in ("kv", "json", "cef", "leef"):
+        if self.kind in KEYED_KINDS:
             if self.kind == "kv" and st["delimiter"] != self.delimiter:
                 return 0.0
             if not self.anchor:
