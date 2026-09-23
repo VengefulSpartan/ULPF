@@ -40,7 +40,9 @@ SUPPORTED_SOURCES = [
     {"pack": Suricata.NAME, "vendor": "OISF", "product": "Suricata EVE JSON",
      "coverage": "alerts as findings; flow, DNS, HTTP, TLS and other protocol events"},
     {"pack": Zeek.NAME, "vendor": "Zeek", "product": "Zeek JSON logs", "coverage": "conn and notice logs"},
-    {"pack": Snort.NAME, "vendor": "Cisco", "product": "Snort", "coverage": "fast alerts and syslog alerts"},
+    {"pack": Snort.NAME, "vendor": "Cisco", "product": "Snort 2 and Snort 3",
+     "coverage": "fast and syslog alerts, alert_csv (Snort's columns and pfSense's), Snort 3 alert_json, and "
+                 "the header line of a full-format alert"},
     {"pack": "generic_cef", "vendor": "Any", "product": "ArcSight CEF (F5, Imperva, Trend Micro, Check Point, ...)",
      "coverage": "header and standard extension keys"},
     {"pack": "generic_leef", "vendor": "Any", "product": "IBM LEEF 1.0/2.0", "coverage": "header and attributes"},
