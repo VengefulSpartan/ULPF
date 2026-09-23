@@ -484,8 +484,17 @@ DESTINATIONS: List[Dict[str, object]] = [
         "type": "file / parquet / kafka",
         "steps": [
             "NDJSON files work with no other software and can be moved on removable media.",
-            "Parquet is partitioned by class_uid and event_day for Athena, Trino, Spark, DuckDB and Amazon "
-            "Security Lake custom sources (needs pyarrow).",
+            "Parquet in the default layout is partitioned by class_uid and event_day for Athena, Trino, "
+            "Spark and DuckDB (needs pyarrow).",
+            "layout: security_lake writes the object layout Amazon Security Lake requires of a custom "
+            "source: ext/<source>/region=<region>/accountId=<id>/eventDay=<YYYYMMDD>/, one OCSF class per "
+            "object, zstd, rows ordered by time. Set batch_size and flush_seconds on the output to land "
+            "in the 5-minute to 1-day file size AWS asks for.",
+            "Check the tree before you upload it: `python scripts/check_security_lake_layout.py "
+            "data/security-lake`. TRACELOG writes files, not S3 objects, so the upload is "
+            "`aws s3 sync data/security-lake s3://<bucket>/` and the output still works air-gapped.",
+            "Security Lake reads OCSF 1.3 and earlier; TRACELOG emits 1.1.0, and the output refuses to "
+            "write anything newer rather than fill a bucket the lake will not read.",
         ],
         "config": """- name: ocsf-archive
   type: file
@@ -493,6 +502,16 @@ DESTINATIONS: List[Dict[str, object]] = [
 
 - name: data-lake
   type: parquet
-  root: data/lake""",
+  root: data/lake
+
+- name: security-lake
+  type: parquet
+  batch_size: 50000
+  flush_seconds: 300
+  root: data/security-lake
+  layout: security_lake
+  region: ap-south-1
+  source_name: tracelog
+  account_id: external""",
     },
 ]

@@ -746,6 +746,13 @@ TRACELOG runs as the layer between the devices that produce perimeter logs and t
 | `webhook` | SOAR platforms and any HTTPS JSON endpoint |
 | `kafka`, `file`, `parquet` | Data platforms, data lakes, Amazon Security Lake custom sources, air-gapped transfer |
 
+The `parquet` output writes the ordinary `class_uid`/`event_day` tree by default, and with
+`layout: security_lake` the object layout Amazon Security Lake requires of a custom source —
+`ext/<source>/region=<region>/accountId=<id>/eventDay=<YYYYMMDD>/`, one OCSF class per object, zstd,
+rows ordered by time, OCSF 1.3 or earlier. `python scripts/check_security_lake_layout.py data/security-lake`
+verifies a tree against those rules before `aws s3 sync` puts it in the bucket; TRACELOG writes files,
+not S3 objects, so the output still works air-gapped.
+
 **Delivery guarantees.** A burst larger than the ingest queue is spooled to disk and replayed, never dropped. A line that no pack recognises is still archived, chained and forwarded as an OCSF Base Event. Each output has its own queue, retries with exponential backoff and optional filters by OCSF class, severity and source, so a slow or broken SIEM never holds up ingestion or the other outputs.
 
 **Dead letters are re-sent, not just parked.** An event an output cannot deliver goes to `data/dead_letter/<output>.ndjson` with its reason, source device, attempt count and kind (`undeliverable`, `queue_full` or `rejected`). Undeliverable and queue-full events are re-sent automatically as soon as the destination answers again (with backoff while it stays down); rejected ones wait until the cause, such as a wrong token or index mapping, is fixed and someone presses **Re-send dead letters** on the Connectors page or calls `POST /api/connectors/dead-letters/<output>/replay`. A replay can go through a different output (for example to the NDJSON archive), resumes from its saved position after a crash so at most one batch is repeated, and never creates duplicates in Elasticsearch, OpenSearch or Wazuh because the event uid is the document id. Details: [docs/CONNECTORS.md](docs/CONNECTORS.md#dead-letters-events-a-destination-did-not-take-and-re-sending-them).

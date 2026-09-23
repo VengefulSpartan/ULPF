@@ -128,6 +128,20 @@ tracelog:
       type: parquet
       root: data/lake
 
+    # Amazon Security Lake custom source: the object layout AWS requires, written locally and
+    # copied up with `aws s3 sync data/security-lake s3://<bucket>/`. Verify before uploading:
+    #   python scripts/check_security_lake_layout.py data/security-lake
+    # batch_size and flush_seconds are what decide file size: AWS asks for 5-minute to 1-day files.
+    - name: security-lake
+      type: parquet
+      batch_size: 50000
+      flush_seconds: 300
+      root: data/security-lake
+      layout: security_lake
+      region: ap-south-1                      # the region the custom source was created in
+      source_name: tracelog                   # the custom source name you registered
+      account_id: external                    # or the AWS account id the data belongs to
+
   pipeline:
     batch_size: 500
     flush_seconds: 0.5
