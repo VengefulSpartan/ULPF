@@ -1,4 +1,4 @@
-# Universal Log Pre-processing Framework (ULPF)
+# TRACELOG — Universal Log Pre-processing Framework
 ### Enterprise Perimeter Telemetry Ingestion, OCSF Normalization, Cryptographic Lineage & Cross-Source Root Cause Analysis
 
 ---
@@ -26,6 +26,7 @@
 8. [Installation, Startup & Verification Guide](#8-installation-startup--verification-guide)
 9. [Plug-and-Play Connectors: Log Sources → TRACELOG → SIEM / Observability](#9-plug-and-play-connectors)
 10. [Log Formats TRACELOG Has Never Seen: Detect, Learn, Approve, Re-parse](#10-log-formats-tracelog-has-never-seen)
+11. [Measured Performance](#11-measured-performance)
 
 ---
 
@@ -33,7 +34,7 @@
 
 Modern enterprise security operations centers (SOCs) ingest massive volumes of perimeter logs originating from heterogeneous appliances—Palo Alto Networks NGFWs, Cisco ASA firewalls, Fortinet SSL-VPN gateways, Suricata/Snort IDS/IPS engines, and perimeter routers. These logs arrive in radically different formats (CEF, LEEF, RFC 3164/5424 Syslog, Key-Value pairs, and raw JSON), making unified cross-device analysis nearly impossible without high-latency manual preprocessing.
 
-**ULPF (Universal Log Pre-processing Framework)** solves this fundamental challenge through three foundational tenets:
+**TRACELOG (Universal Log Pre-processing Framework)** solves this fundamental challenge through three foundational tenets:
 1. **Lossless Preservation**: The exact raw payload is preserved verbatim with an immutable SHA-256 hash before any normalization occurs.
 2. **Deterministic OCSF Normalization**: Events are mapped to standard Open Cybersecurity Schema Framework (OCSF v1.1.0) classes (`Network Activity 4001`, `Authentication 3002`, `Detection Finding 2004`, and `Base Event 0` for anything unrecognised).
 3. **Provable Cryptographic Lineage**: A transaction-safe SHA-256 hash-chain guarantees that any record alteration, deletion, or reordering is immediately flagged.
@@ -765,3 +766,38 @@ A parser meeting an unfamiliar format can leave fields empty, or fill them with 
 4. **Fix history without rewriting it.** Past lines of the format are re-parsed from the byte-for-byte archive as new chained events that name the event they supersede; the originals stay in the integrity chain, revisions are sent to the outputs, and reconciliation accounts for them.
 
 On 13 formats TRACELOG has no pack for, the generic parser went from 31 correct / 21 **wrong** fields to 83 correct / **0 wrong**; on generated WatchGuard, AWS VPC flow log and OpenSSH traffic, learned parsers then filled every remaining field on new lines (`python scripts/evaluate_unseen_formats.py --learned`).
+
+---
+
+## 11. Measured Performance
+
+Every figure below comes from `scripts/benchmark.py`, which replays a mixed corpus (80 % lines the
+vendor packs know, 15 % formats with no pack, 5 % lines nothing parses) through the real pipeline:
+decode, parse, normalise to OCSF 1.1.0, archive, hash-chain, store. Run it yourself:
+
+```bash
+python scripts/benchmark.py -n 100000 -b 1000 --read
+```
+
+On a small 2-vCPU container, 100,000 events in batches of 1,000:
+
+| | before | after |
+|---|---|---|
+| Ingest, end to end | 1,263 events/s | **1,622 events/s** |
+| Newest 50 events (Explorer) | 105 ms | **9.5 ms** |
+| Search the archive for an address | 120 ms | **3.2 ms** |
+| Filter by IP | 110 ms | **2.7 ms** |
+| Dashboard | 2,281 ms | **659 ms** |
+| Verify the whole chain | 7,350 ms | **3,848 ms** |
+
+At 20,000 events, ingestion runs at **2,711 events/s** (before: 1,489); the difference is index
+maintenance as the database grows. One billion events a day is 11,574 events/s sustained — quote
+the rate your own hardware measures, and the multiplication.
+
+The hashed record did not change: sequence numbers, the preimage
+`H(prev : seq : raw_hash : canonical_json)` and the canonical JSON are byte for byte what they
+were, `tests/test_throughput.py` proves it, and the unseen-format score is unchanged at 85 correct,
+18 missed, **0 wrong**.
+
+[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately
+left alone, and the measured cost of the next three levers.

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     
+    # Full-text index over the archived lines. On, searching 100k stored lines for an address takes
+    # under a millisecond instead of a third of a second; off, ingestion is about a quarter faster
+    # (scripts/benchmark.py measures both). Turn it off for a pure forwarder that is never searched.
+    SEARCH_INDEX: bool = True
+
     # Server settings
     BACKEND_HOST: str = "127.0.0.1"
     BACKEND_PORT: int = 8000

@@ -1,5 +1,4 @@
 import uuid
-import json
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
@@ -55,9 +54,9 @@ class IngestionPipeline:
                 (raw_id, source_id, raw_text, raw_hash, format_detected, format_id)
             )
 
-            # 3. Determine next sequence number
-            latest = IntegrityLedger.get_latest_entry(conn)
-            seq_num = (latest["sequence_num"] + 1) if latest else 1
+            # 3. Determine next sequence number (read once, handed to the ledger below)
+            last_seq, prev_hash = IntegrityLedger.chain_head(conn)
+            seq_num = last_seq + 1
 
             # 4. Normalize to OCSF v1.1.0
             ocsf_event: OCSFEvent = OCSFNormalizer.normalize(
@@ -72,48 +71,10 @@ class IngestionPipeline:
             # Override generated id with our event_id
             ocsf_event.id = event_id
 
-            normalized_dict = ocsf_event.model_dump()
-            normalized_json_str = json.dumps(normalized_dict)
-            unmapped_json_str = json.dumps(ocsf_event.unmapped)
-
-            # 5. Insert into normalized_events
-            cursor.execute(
-                """
-                INSERT INTO normalized_events (
-                    id, sequence_num, raw_id, class_uid, class_name, category_uid, category_name,
-                    activity_id, activity_name, severity_id, severity, time, time_epoch_ms,
-                    src_ip, src_port, dst_ip, dst_port, protocol, action, disposition,
-                    user_name, finding_title, normalized_json, unmapped_json, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                """,
-                (
-                    event_id, seq_num, raw_id,
-                    ocsf_event.class_uid, ocsf_event.class_name,
-                    ocsf_event.category_uid, ocsf_event.category_name,
-                    ocsf_event.activity_id, ocsf_event.activity_name,
-                    ocsf_event.severity_id, ocsf_event.severity,
-                    ocsf_event.time, ocsf_event.time_epoch_ms,
-                    ocsf_event.src_endpoint.ip if ocsf_event.src_endpoint else None,
-                    ocsf_event.src_endpoint.port if ocsf_event.src_endpoint else None,
-                    ocsf_event.dst_endpoint.ip if ocsf_event.dst_endpoint else None,
-                    ocsf_event.dst_endpoint.port if ocsf_event.dst_endpoint else None,
-                    ocsf_event.connection_info.protocol_name if ocsf_event.connection_info else None,
-                    ocsf_event.action, ocsf_event.disposition,
-                    ocsf_event.user.name if ocsf_event.user else None,
-                    ocsf_event.finding.title if ocsf_event.finding else None,
-                    normalized_json_str, unmapped_json_str
-                )
-            )
-
-            # 6. Append to cryptographic integrity ledger
-            IntegrityLedger.append_event(
-                conn=conn,
-                event_id=event_id,
-                raw_id=raw_id,
-                raw_hash=raw_hash,
-                normalized_data=normalized_dict
-            )
+            # 5. Store the event and append it to the integrity chain (same writer as streamed logs)
+            from backend.services.ingestion.stream import store_event
+            normalized_dict = store_event(conn, ocsf_event, event_id, seq_num, raw_id, raw_hash,
+                                          fmt=format_detected, head=(last_seq, prev_hash))
 
             if format_id:
                 from backend.services.parsing.formats import registry as format_registry

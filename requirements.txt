@@ -16,3 +16,4 @@ kafka-python-ng>=2.2.2
 #   pyarrow>=15.0
 # Audit report PDF export
 reportlab>=4.0
+orjson>=3.9          # serialises and reads the events; the pipeline falls back to json without it

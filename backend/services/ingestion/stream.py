@@ -11,7 +11,6 @@ Differences from the interactive single-line API path:
 - a whole batch is written in one SQLite transaction;
 - the sending device is registered as a source automatically.
 """
-import json
 import logging
 import re
 import threading
@@ -20,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.services import jsonio
 from backend.services.integrity.hasher import Hasher
 from backend.services.integrity.ledger import IntegrityLedger
 from backend.services.normalization.ocsf_export import to_ocsf
@@ -61,7 +61,15 @@ class StoredEvent:
     source_name: str
     sequence_num: int
     normalized: Dict[str, Any]
-    ocsf: Dict[str, Any]
+    _ocsf: Optional[Dict[str, Any]] = None
+
+    @property
+    def ocsf(self) -> Dict[str, Any]:
+        """The strict OCSF 1.1.0 form. Built when an output asks for it, not for every stored line:
+        a deployment with no outputs configured never pays for it."""
+        if self._ocsf is None:
+            self._ocsf = to_ocsf(self.normalized)
+        return self._ocsf
 
 
 def decode_raw(raw: bytes) -> Tuple[str, str]:
@@ -139,25 +147,49 @@ class SourceResolver:
         return result
 
 
-def store_event(conn, ev, event_id: str, seq: int, raw_id: str, raw_hash: str) -> Dict[str, Any]:
-    """Insert a normalised event and append it to the integrity chain (inside the caller's transaction)."""
+EVENT_INSERT = """INSERT INTO normalized_events (id, sequence_num, raw_id, class_uid, class_name, category_uid,
+   category_name, activity_id, activity_name, severity_id, severity, time, time_epoch_ms, src_ip,
+   src_port, dst_ip, dst_port, protocol, action, disposition, user_name, finding_title,
+   normalized_json, unmapped_json, parser_pack, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"""
+
+RAW_INSERT = """INSERT INTO raw_logs (id, source_id, raw_text, raw_hash, ingested_at, format_detected, status,
+   raw_encoding, transport, input_name, peer_ip, received_at, format_id)
+   VALUES (?, ?, ?, ?, datetime('now'), ?, 'ingested', ?, ?, ?, ?, ?, ?)"""
+
+
+def parser_pack_of(normalized: Dict[str, Any], fmt: str) -> str:
+    """Which parser read this event: a vendor pack name, 'learned...', 'generic_inferred' or 'parse_error'.
+
+    Stored in its own column so the dashboard can group by it without reading and parsing the
+    JSON of every event. It is an index over what the event already says, not new information.
+    """
+    tp = (normalized.get("unmapped") or {}).get("tracelog_parse") or {}
+    return tp.get("parser_pack") or fmt
+
+
+def event_row(ev, event_id: str, seq: int, raw_id: str, normalized: Dict[str, Any], normalized_json: str,
+              fmt: str) -> Tuple[Any, ...]:
+    """The normalized_events row for one event, in EVENT_INSERT's column order."""
+    return (event_id, seq, raw_id, ev.class_uid, ev.class_name, ev.category_uid, ev.category_name,
+            ev.activity_id, ev.activity_name, ev.severity_id, ev.severity, ev.time, ev.time_epoch_ms,
+            ev.src_endpoint.ip if ev.src_endpoint else None, ev.src_endpoint.port if ev.src_endpoint else None,
+            ev.dst_endpoint.ip if ev.dst_endpoint else None, ev.dst_endpoint.port if ev.dst_endpoint else None,
+            ev.connection_info.protocol_name if ev.connection_info else None, ev.action, ev.disposition,
+            ev.user.name if ev.user else None, ev.finding.title if ev.finding else None,
+            normalized_json, jsonio.dumps(ev.unmapped), parser_pack_of(normalized, fmt))
+
+
+def store_event(conn, ev, event_id: str, seq: int, raw_id: str, raw_hash: str,
+                fmt: str = "generic_inferred", head: Optional[Tuple[int, str]] = None) -> Dict[str, Any]:
+    """Insert a normalised event and append it to the integrity chain (inside the caller's transaction).
+    `head` is the chain head the caller already read, so it is not read again here."""
     normalized = ev.model_dump()
-    conn.execute(
-        """INSERT INTO normalized_events (id, sequence_num, raw_id, class_uid, class_name, category_uid,
-           category_name, activity_id, activity_name, severity_id, severity, time, time_epoch_ms, src_ip,
-           src_port, dst_ip, dst_port, protocol, action, disposition, user_name, finding_title,
-           normalized_json, unmapped_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
-        (event_id, seq, raw_id, ev.class_uid, ev.class_name, ev.category_uid, ev.category_name,
-         ev.activity_id, ev.activity_name, ev.severity_id, ev.severity, ev.time, ev.time_epoch_ms,
-         ev.src_endpoint.ip if ev.src_endpoint else None, ev.src_endpoint.port if ev.src_endpoint else None,
-         ev.dst_endpoint.ip if ev.dst_endpoint else None, ev.dst_endpoint.port if ev.dst_endpoint else None,
-         ev.connection_info.protocol_name if ev.connection_info else None, ev.action, ev.disposition,
-         ev.user.name if ev.user else None, ev.finding.title if ev.finding else None,
-         json.dumps(normalized), json.dumps(ev.unmapped)),
-    )
+    # the stored JSON is the canonical form that the chain hashes, so each event is serialised once
+    normalized_json = Hasher.canonical_json(normalized)
+    conn.execute(EVENT_INSERT, event_row(ev, event_id, seq, raw_id, normalized, normalized_json, fmt))
     IntegrityLedger.append_event(conn=conn, event_id=event_id, raw_id=raw_id, raw_hash=raw_hash,
-                                 normalized_data=normalized)
+                                 normalized_data=normalized_json, head=head)
     return normalized
 
 
@@ -174,8 +206,11 @@ def note_format(conn, parsed: Dict[str, Any]) -> Optional[str]:
 
 
 class StreamIngestor:
+    OPTIMIZE_EVERY = 25   # batches between query-planner statistics refreshes
+
     def __init__(self, resolver: Optional[SourceResolver] = None):
         self.resolver = resolver or SourceResolver()
+        self._batches = 0
 
     def ingest(self, records: List[InboundRecord]) -> List[StoredEvent]:
         prepared = []
@@ -196,24 +231,24 @@ class StreamIngestor:
         counts: Dict[str, int] = {}
         database = db_module.db
         formats: List[Dict[str, Any]] = []
+        raw_rows: List[Tuple[Any, ...]] = []
+        event_rows: List[Tuple[Any, ...]] = []
+        ledger_rows: List[Tuple[Any, ...]] = []
         with IntegrityLedger.write_lock, database.get_connection() as conn:
+            # the chain head is read once for the batch and then carried in memory: the events are
+            # linked in the same order, with the same hashes, without a query per line
+            last_seq, prev_hash = IntegrityLedger.chain_head(conn)
             for rec, text, encoding, fmt, parsed in prepared:
                 source_id, source_name = self.resolver.resolve(conn, rec, parsed, fmt)
                 raw_id, event_id = str(uuid.uuid4()), str(uuid.uuid4())
                 raw_hash = Hasher.hash_raw_bytes(text)
                 format_id = note_format(conn, parsed)
-                conn.execute(
-                    "INSERT INTO raw_logs (id, source_id, raw_text, raw_hash, ingested_at, format_detected, status, "
-                    "raw_encoding, transport, input_name, peer_ip, received_at, format_id) "
-                    "VALUES (?, ?, ?, ?, datetime('now'), ?, 'ingested', ?, ?, ?, ?, ?, ?)",
-                    (raw_id, source_id, text, raw_hash, fmt, encoding, rec.transport, rec.input_name,
-                     rec.peer_ip, rec.received_at, format_id),
-                )
+                raw_rows.append((raw_id, source_id, text, raw_hash, fmt, encoding, rec.transport, rec.input_name,
+                                 rec.peer_ip, rec.received_at, format_id))
                 if format_id:
                     formats.append({"format_id": format_id, "tp": parsed["tracelog_parse"], "raw_id": raw_id,
                                     "raw_text": text, "source_name": source_name})
-                latest = IntegrityLedger.get_latest_entry(conn)
-                seq = (latest["sequence_num"] + 1) if latest else 1
+                seq = last_seq + 1
                 try:
                     ev = OCSFNormalizer.normalize(parsed, text, raw_id, raw_hash,
                                                   vendor=parsed.get("vendor") or rec.hints.get("vendor") or "Generic",
@@ -231,10 +266,18 @@ class StreamIngestor:
                     ev.unmapped["device_hostname"] = rec.hints["hostname"]
                 if rec.peer_ip:
                     ev.unmapped.setdefault("sender_ip", rec.peer_ip)
-                normalized = store_event(conn, ev, event_id, seq, raw_id, raw_hash)
+                normalized = ev.model_dump()
+                # serialised once: the stored JSON is the canonical form the chain hashes
+                normalized_json = Hasher.canonical_json(normalized)
+                record_hash = IntegrityLedger.link(seq, prev_hash, raw_hash, normalized_json)
+                event_rows.append(event_row(ev, event_id, seq, raw_id, normalized, normalized_json, fmt))
+                ledger_rows.append((seq, event_id, raw_id, raw_hash, record_hash, prev_hash))
+                last_seq, prev_hash = seq, record_hash
                 counts[source_id] = counts.get(source_id, 0) + 1
-                stored.append(StoredEvent(event_id, raw_id, source_id, source_name, seq, normalized,
-                                          to_ocsf(normalized)))
+                stored.append(StoredEvent(event_id, raw_id, source_id, source_name, seq, normalized))
+            conn.executemany(RAW_INSERT, raw_rows)
+            conn.executemany(EVENT_INSERT, event_rows)
+            IntegrityLedger.insert_links(conn, ledger_rows)
             for source_id, n in counts.items():
                 conn.execute("UPDATE sources SET event_count = event_count + ?, last_event_at = datetime('now') "
                              "WHERE id = ?", (n, source_id))
@@ -244,4 +287,7 @@ class StreamIngestor:
                 except Exception:  # counting formats must never cost a log line
                     logger.exception("could not update the format registry")
             conn.commit()
+        self._batches += 1
+        if self._batches % self.OPTIMIZE_EVERY == 0:
+            database.optimize()
         return stored
