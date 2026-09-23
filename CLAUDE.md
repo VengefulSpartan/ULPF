@@ -35,7 +35,7 @@ existing chain, so it is a versioned decision, never a side effect of a refactor
 ## Before you say something works
 
 ```bash
-pytest -q                                   # 147 passing
+pytest -q                                   # 197 passing
 python scripts/evaluate_unseen_formats.py   # 85 correct, 18 missed, 0 WRONG
 python scripts/benchmark.py -n 20000 -b 1000 --read
 ```
@@ -86,7 +86,7 @@ backend/services/
   storage/             SQLite schema, migrations, indexes
 frontend/              Streamlit dashboard, one module per page
 scripts/               benchmark, unseen-format scoring, sample sender, connector docs
-tests/                 147 tests; conftest.py gives every test an isolated database
+tests/                 197 tests; conftest.py gives every test an isolated database
 ```
 
 `backend/services/ingestion/stream.py` is the hot path: one transaction per batch, the chain head

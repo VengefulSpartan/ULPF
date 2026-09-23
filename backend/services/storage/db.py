@@ -302,6 +302,15 @@ class Database:
             # Migration: the format id of lines the generic parser handled (for re-parsing them later)
             if "format_id" not in existing:
                 cursor.execute("ALTER TABLE raw_logs ADD COLUMN format_id TEXT")
+            # Migration: exact preservation (docs/adr/0002-raw-preservation.md). raw_framing is the line
+            # terminator the transport put after the line ('CRLF', 'LF' or ''), so the bytes as received
+            # can be rebuilt; raw_hash_of says what raw_hash is a hash of: 'bytes' (the received bytes)
+            # for rows written from now on, NULL for older rows, whose hash is of the text's UTF-8 form.
+            # The two only differ for lines that were not valid UTF-8.
+            if "raw_framing" not in existing:
+                cursor.execute("ALTER TABLE raw_logs ADD COLUMN raw_framing TEXT")
+            if "raw_hash_of" not in existing:
+                cursor.execute("ALTER TABLE raw_logs ADD COLUMN raw_hash_of TEXT")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_raw_logs_format ON raw_logs (format_id);")
             # Migration: an event re-parsed later points to its revision. Not part of the hashed record: the
             # revision itself is chained and names the event it supersedes.

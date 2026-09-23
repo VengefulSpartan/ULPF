@@ -55,7 +55,7 @@ the standard library and everything still works, about 5 % slower.
 pytest -q
 ```
 
-**Expect `147 passed`.** If tests fail, stop here — a number from a broken build is worse than no
+**Expect `197 passed`.** If tests fail, stop here — a number from a broken build is worse than no
 number.
 
 ```bash

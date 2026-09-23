@@ -22,6 +22,19 @@ class Hasher:
         return hashlib.sha256(payload_bytes).hexdigest()
 
     @classmethod
+    def stored_raw_hash(cls, raw_text: str, raw_encoding: str | None, raw_hash_of: str | None) -> str:
+        """
+        Recompute a stored line's raw_hash the way it was computed when it was written.
+
+        'bytes' (every row written since exact preservation): SHA-256 of the bytes received, which
+        raw_text.encode(raw_encoding) reproduces exactly. Older rows (NULL): SHA-256 of the text's
+        UTF-8 form. For a line that was valid UTF-8 the two are the same hash.
+        """
+        if raw_hash_of == "bytes":
+            return cls.hash_raw_bytes(raw_text.encode(raw_encoding or "utf-8"))
+        return cls.hash_raw_bytes(raw_text)
+
+    @classmethod
     def canonical_json(cls, data: Dict[str, Any]) -> str:
         """
         Canonical JSON serialization:

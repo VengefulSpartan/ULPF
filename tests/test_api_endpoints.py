@@ -19,7 +19,6 @@ def setup_test_db(tmp_path, monkeypatch):
     import backend.api.correlation as c_api
     import backend.api.analytics as a_api
     import backend.api.export as exp_api
-    import backend.services.ingestion.pipeline as pipe_module
     import backend.services.integrity.ledger as l_module
     import backend.services.correlation.engine as ce_module
 
@@ -32,7 +31,6 @@ def setup_test_db(tmp_path, monkeypatch):
     monkeypatch.setattr(c_api, "db", db_inst)
     monkeypatch.setattr(a_api, "db", db_inst)
     monkeypatch.setattr(exp_api, "db", db_inst)
-    monkeypatch.setattr(pipe_module, "db", db_inst)
     monkeypatch.setattr(l_module, "db", db_inst)
     monkeypatch.setattr(ce_module, "db", db_inst)
 

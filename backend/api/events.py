@@ -2,6 +2,7 @@ import json
 import re
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional, Dict, Any
+from backend.services.integrity.hasher import Hasher
 from backend.services.storage.db import db
 
 router = APIRouter(prefix="/events", tags=["Log Explorer & Events"])
@@ -132,8 +133,8 @@ def get_event_detail(event_id: str):
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT n.*, r.raw_text, r.raw_hash, r.format_detected, s.name as source_name, s.vendor, s.product,
-                   l.record_hash, l.prev_hash
+            SELECT n.*, r.raw_text, r.raw_hash, r.raw_encoding, r.raw_framing, r.raw_hash_of, r.format_detected,
+                   s.name as source_name, s.vendor, s.product, l.record_hash, l.prev_hash
             FROM normalized_events n
             JOIN raw_logs r ON n.raw_id = r.id
             JOIN sources s ON r.source_id = s.id
@@ -163,6 +164,13 @@ def get_event_detail(event_id: str):
             "user_name": r["user_name"],
             "raw_text": r["raw_text"],
             "raw_hash": r["raw_hash"],
+            # what anyone needs to check the hash themselves: SHA-256 of raw_text encoded this way is
+            # raw_hash, and adding the framing back gives the bytes exactly as they arrived
+            "raw_encoding": r["raw_encoding"],
+            "raw_framing": r["raw_framing"] or "",
+            "raw_hash_of": r["raw_hash_of"] or "text-utf8",
+            "raw_hash_verified": Hasher.stored_raw_hash(r["raw_text"], r["raw_encoding"], r["raw_hash_of"])
+                                 == r["raw_hash"],
             "record_hash": r["record_hash"],
             "prev_hash": r["prev_hash"],
             "format_detected": r["format_detected"],

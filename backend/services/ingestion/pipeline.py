@@ -1,156 +1,99 @@
-import uuid
-import logging
-from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime
-from backend.services.storage.db import db
-from backend.services.integrity.hasher import Hasher
-from backend.services.integrity.ledger import IntegrityLedger
-from backend.services.parsing.dispatch import parse_log
-from backend.services.normalization.ocsf_normalizer import OCSFNormalizer
-from backend.models.event import OCSFEvent, RawLogRecord
+"""
+Ingestion for callers that already know the source: a line sent to the API, a batch of lines, and
+file uploads from the dashboard.
 
-logger = logging.getLogger("ulpf.pipeline")
+These used to have their own writer, and it was not lossless: it stripped whitespace from API lines,
+and uploads were decoded with errors="replace", so a byte that was not valid UTF-8 became U+FFFD and
+was gone for good. Now every path goes through the one batched writer (stream.StreamIngestor) with
+a FixedSource resolver, so an uploaded or posted line is kept exactly as a streamed one is — same
+decoding, same framing record, same hash of the bytes received — and uploads are written a batch per
+transaction instead of a transaction per line.
+"""
+import logging
+from typing import Any, Dict, Iterable, List, Union
+
+from backend.services.ingestion.stream import FixedSource, InboundRecord, StoredEvent, StreamIngestor
+
+logger = logging.getLogger("tracelog.pipeline")
+
+BATCH = 1000
+Line = Union[str, bytes]
+
+
+def _as_bytes(line: Line) -> bytes:
+    # text from the API arrived as UTF-8 JSON, so those are its bytes
+    return line if isinstance(line, bytes) else line.encode("utf-8")
+
+
+def _route(stored: List[StoredEvent]) -> None:
+    """Hand stored events to the configured outputs (a no-op where the connector engine is not
+    running; startup recovery then sends anything an output still owes)."""
+    if not stored:
+        return
+    try:
+        from backend.connectors.engine import engine
+        engine.route(stored)
+    except Exception:
+        logger.exception("could not hand %d events to the outputs", len(stored))
+
 
 class IngestionPipeline:
-    """
-    Core Ingestion and Pre-processing Pipeline:
-    Ingestion -> Lossless Raw Storage -> Parsing -> OCSF Normalization -> Integrity Ledger
-    """
+    """Receive -> archive the exact bytes -> parse -> normalise to OCSF -> hash-chain -> deliver."""
 
     @classmethod
-    def ingest_single_log(
-        cls,
-        raw_text: str,
-        source_id: str,
-        source_vendor: str = "Generic",
-        source_product: str = "Perimeter Device"
-    ) -> Dict[str, Any]:
-        """
-        Executes end-to-end ingestion of a single raw log string within an atomic SQLite transaction.
-        """
-        raw_text = raw_text.strip()
-        if not raw_text:
+    def ingest_single_log(cls, raw_text: str, source_id: str, source_vendor: str = "Generic",
+                          source_product: str = "Perimeter Device", transport: str = "api") -> Dict[str, Any]:
+        """Ingest one line exactly as given — leading and trailing whitespace included."""
+        if not raw_text or not raw_text.strip():
             raise ValueError("Log line cannot be empty")
-
-        raw_id = str(uuid.uuid4())
-        event_id = str(uuid.uuid4())
-        raw_hash = Hasher.hash_raw_bytes(raw_text)
-
-        # 1. Parse log
-        format_detected, parsed_data = parse_log(raw_text)
-
-        with IntegrityLedger.write_lock, db.get_connection() as conn:
-            cursor = conn.cursor()
-
-            # 2. Insert into raw_logs (lossless byte preservation)
-            from backend.services.ingestion.stream import note_format
-            format_id = note_format(conn, parsed_data)
-            cursor.execute(
-                """
-                INSERT INTO raw_logs (id, source_id, raw_text, raw_hash, ingested_at, format_detected, status,
-                                      format_id)
-                VALUES (?, ?, ?, ?, datetime('now'), ?, 'ingested', ?)
-                """,
-                (raw_id, source_id, raw_text, raw_hash, format_detected, format_id)
-            )
-
-            # 3. Determine next sequence number (read once, handed to the ledger below)
-            last_seq, prev_hash = IntegrityLedger.chain_head(conn)
-            seq_num = last_seq + 1
-
-            # 4. Normalize to OCSF v1.1.0
-            ocsf_event: OCSFEvent = OCSFNormalizer.normalize(
-                parsed_data=parsed_data,
-                raw_text=raw_text,
-                raw_id=raw_id,
-                raw_hash=raw_hash,
-                vendor=source_vendor,
-                product=source_product,
-                sequence_num=seq_num
-            )
-            # Override generated id with our event_id
-            ocsf_event.id = event_id
-
-            # 5. Store the event and append it to the integrity chain (same writer as streamed logs)
-            from backend.services.ingestion.stream import store_event
-            normalized_dict = store_event(conn, ocsf_event, event_id, seq_num, raw_id, raw_hash,
-                                          fmt=format_detected, head=(last_seq, prev_hash))
-
-            if format_id:
-                from backend.services.parsing.formats import registry as format_registry
-                row = cursor.execute("SELECT name FROM sources WHERE id = ?", (source_id,)).fetchone()
-                try:
-                    format_registry.note_batch(conn, [{"format_id": format_id, "tp": parsed_data["tracelog_parse"],
-                                                       "raw_id": raw_id, "raw_text": raw_text,
-                                                       "source_name": row[0] if row else None}])
-                except Exception:
-                    logger.exception("could not update the format registry")
-
-            # 7. Update source event stats
-            cursor.execute(
-                """
-                UPDATE sources 
-                SET event_count = event_count + 1, last_event_at = datetime('now')
-                WHERE id = ?
-                """,
-                (source_id,)
-            )
-
-            conn.commit()
-
-        # Forward to the configured outputs like streamed logs (a no-op where the connector engine
-        # is not running; startup recovery then sends anything an output still owes).
-        try:
-            from backend.connectors.engine import engine
-            engine.route_normalized(normalized_dict, source_id)
-        except Exception:
-            logging.getLogger("ulpf.pipeline").exception("could not hand event %s to the outputs", event_id)
-
+        record = InboundRecord(raw=_as_bytes(raw_text), transport=transport, input_name=transport,
+                               hints={"vendor": source_vendor, "product": source_product})
+        stored = StreamIngestor(FixedSource(source_id)).ingest([record])
+        if not stored:
+            raise ValueError("Log line cannot be empty")
+        _route(stored)
+        ev = stored[0]
         return {
             "success": True,
-            "raw_id": raw_id,
-            "event_id": event_id,
-            "sequence_num": seq_num,
-            "raw_hash": raw_hash,
-            "format_detected": format_detected,
-            "ocsf_class": ocsf_event.class_name,
-            "severity": ocsf_event.severity
+            "raw_id": ev.raw_id,
+            "event_id": ev.event_id,
+            "sequence_num": ev.sequence_num,
+            "raw_hash": ev.raw_hash,
+            "format_detected": ev.format_detected,
+            "ocsf_class": ev.normalized.get("class_name"),
+            "severity": ev.normalized.get("severity"),
         }
 
     @classmethod
-    def ingest_batch(
-        cls,
-        lines: List[str],
-        source_id: str,
-        source_vendor: str = "Generic",
-        source_product: str = "Perimeter Device"
-    ) -> Dict[str, Any]:
+    def ingest_batch(cls, lines: Iterable[Line], source_id: str, source_vendor: str = "Generic",
+                     source_product: str = "Perimeter Device", transport: str = "api") -> Dict[str, Any]:
         """
-        Ingests a batch of raw log lines sequentially preserving monotonic order.
+        Ingest many lines for one source. Every line that is not blank is archived — including
+        lines that start with '#', which are often a format's own header (W3C '#Fields:', Zeek) and
+        are part of what the device wrote.
         """
-        success_count = 0
-        failed_count = 0
-        errors = []
+        lines = list(lines)
+        ingestor = StreamIngestor(FixedSource(source_id))
+        hints = {"vendor": source_vendor, "product": source_product}
+        ingested = 0
+        for i in range(0, len(lines), BATCH):
+            records = [InboundRecord(raw=_as_bytes(line), transport=transport, input_name=transport, hints=hints)
+                       for line in lines[i:i + BATCH]]
+            stored = ingestor.ingest(records)
+            ingested += len(stored)
+            _route(stored)
+        return {"total": len(lines), "ingested": ingested, "skipped_blank": len(lines) - ingested,
+                "failed": 0, "errors": []}
 
-        for idx, line in enumerate(lines):
-            clean_line = line.strip()
-            if not clean_line or clean_line.startswith("#"):
-                continue
-            try:
-                cls.ingest_single_log(
-                    raw_text=clean_line,
-                    source_id=source_id,
-                    source_vendor=source_vendor,
-                    source_product=source_product
-                )
-                success_count += 1
-            except Exception as e:
-                failed_count += 1
-                errors.append(f"Line {idx + 1}: {str(e)}")
 
-        return {
-            "total": len(lines),
-            "ingested": success_count,
-            "failed": failed_count,
-            "errors": errors[:10]
-        }
+def split_upload(content: bytes) -> List[bytes]:
+    """
+    An uploaded file's lines, as bytes, each with its own terminator still attached so the writer
+    records whether it was LF or CRLF. Nothing is decoded here: decoding is the writer's job, and it
+    never replaces a byte.
+    """
+    parts = content.split(b"\n")
+    lines = [part + b"\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])          # a last line with no terminator
+    return lines
