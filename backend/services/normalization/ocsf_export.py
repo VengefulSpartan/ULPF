@@ -19,7 +19,13 @@ https://github.com/ocsf/ocsf-schema/tree/v1.1.0.
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-OCSF_VERSION = "1.1.0"
+from backend.config import settings
+
+# The version every event is stamped with, and the one these rules were checked against. It is a
+# setting (see backend/config.py and docs/adr/0001-ocsf-version.md); the required attributes of the
+# four classes TRACELOG emits are unchanged across OCSF 1.1 to 1.3, so validate() is version-independent
+# within that range.
+OCSF_VERSION = settings.OCSF_VERSION
 ACTION_IDS = {"allow": (1, "Allowed"), "deny": (2, "Denied"), "drop": (2, "Denied")}
 DISPOSITION_IDS = {"allowed": (1, "Allowed"), "denied": (2, "Blocked"), "dropped": (6, "Dropped"),
                    "alert": (19, "Alert")}
@@ -70,7 +76,7 @@ def to_ocsf(event: Dict[str, Any], include_raw: bool = True) -> Dict[str, Any]:
         "severity": event.get("severity"),
         "time": int(event.get("time_epoch_ms") or 0),
         "metadata": {
-            "version": OCSF_VERSION,
+            "version": OCSF_VERSION,   # module attribute, so a test or a deployment can set it
             "uid": event.get("id"),
             "sequence": meta.get("sequence_num"),
             "original_time": str(original_time) if original_time else None,

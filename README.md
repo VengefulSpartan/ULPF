@@ -801,6 +801,16 @@ At 20,000 events, ingestion runs at **2,711 events/s** (before: 1,489); the diff
 maintenance as the database grows. One billion events a day is 11,574 events/s sustained — quote
 the rate your own hardware measures, and the multiplication.
 
+### Why OCSF 1.1.0, when OCSF is past 1.9
+
+Deliberately, and written down in [`docs/adr/0001-ocsf-version.md`](docs/adr/0001-ocsf-version.md).
+Amazon Security Lake reads OCSF 1.3 and earlier for custom sources, which makes it the strictest
+consumer we target and sets the ceiling; SIEMs map our fields themselves and do not refuse an event
+for its version; and the attributes our four classes require did not change between 1.1 and 1.3, so
+moving inside that range is the `OCSF_VERSION` setting rather than a rewrite. The test suite checks
+that events still validate at 1.2 and 1.3, and a version the code has not been checked against is
+refused at startup instead of emitted.
+
 The hashed record did not change: sequence numbers, the preimage
 `H(prev : seq : raw_hash : canonical_json)` and the canonical JSON are byte for byte what they
 were, `tests/test_throughput.py` proves it, and the unseen-format score is unchanged at 85 correct,

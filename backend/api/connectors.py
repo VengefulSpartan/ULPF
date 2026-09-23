@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from backend.connectors.engine import engine
-from backend.services.normalization.ocsf_export import to_ocsf, validate
+from backend.services.normalization.ocsf_export import OCSF_VERSION, to_ocsf, validate
 from backend.services.storage.db import db
 
 router = APIRouter(prefix="/connectors", tags=["Connectors"])
@@ -28,7 +28,7 @@ def _sample_event() -> dict:
         ev = {"class_uid": 4001, "class_name": "Network Activity", "category_uid": 4,
               "category_name": "Network Activity", "activity_id": 6, "activity_name": "Traffic",
               "type_uid": 400106, "severity_id": 1, "severity": "Informational", "time": now,
-              "metadata": {"version": "1.1.0", "uid": str(uuid.uuid4()),
+              "metadata": {"version": OCSF_VERSION, "uid": str(uuid.uuid4()),
                            "product": {"vendor_name": "TRACELOG", "name": "connector test"}},
               "src_endpoint": {"ip": "192.0.2.10", "port": 51000}, "dst_endpoint": {"ip": "198.51.100.20", "port": 443},
               "message": "TRACELOG connector test event"}
