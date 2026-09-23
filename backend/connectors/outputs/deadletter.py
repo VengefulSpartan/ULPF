@@ -90,7 +90,11 @@ class DeadLetterStore:
 
     def iter_entries(self) -> Iterator[Dict[str, Any]]:
         for path, start in self._files():
-            with path.open("rb") as fh:
+            try:
+                fh = path.open("rb")
+            except FileNotFoundError:
+                continue        # a replay finished and removed its claim file: those entries were delivered
+            with fh:
                 fh.seek(start)
                 for raw in fh:
                     if raw.strip():
@@ -99,8 +103,19 @@ class DeadLetterStore:
                         except ValueError:
                             continue
 
+    def _state_key(self) -> Tuple[Any, ...]:
+        """What the waiting files look like right now, tolerating a replay that finishes mid-look."""
+        key = []
+        for path, off in self._files():
+            try:
+                st = path.stat()
+            except FileNotFoundError:
+                continue
+            key.append((str(path), st.st_size, st.st_mtime_ns, off))
+        return tuple(key)
+
     def summary(self) -> Dict[str, Any]:
-        key = tuple((str(p), p.stat().st_size, p.stat().st_mtime_ns, off) for p, off in self._files())
+        key = self._state_key()
         if self._summary_cache[0] == key and self._summary_cache[1] is not None:
             return {**self._summary_cache[1], "replay_running": self.busy}
         kinds: Counter = Counter()
