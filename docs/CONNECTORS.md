@@ -30,7 +30,7 @@ In the commands below, `TRACELOG_IP` is the TRACELOG server's address. Ports: sy
 | `pfsense_filterlog` | Netgate / Deciso | pfSense and OPNsense filterlog | IPv4/IPv6 pass/block |
 | `suricata_eve` | OISF | Suricata EVE JSON | alerts as findings; flow, DNS, HTTP, TLS and other protocol events |
 | `zeek_json` | Zeek | Zeek JSON logs | conn and notice logs |
-| `snort_alert` | Cisco | Snort | fast alerts and syslog alerts |
+| `snort_alert` | Cisco | Snort 2 and Snort 3 | fast and syslog alerts, alert_csv (Snort's columns and pfSense's), Snort 3 alert_json, and the header line of a full-format alert |
 | `generic_cef` | Any | ArcSight CEF (F5, Imperva, Trend Micro, Check Point, ...) | header and standard extension keys |
 | `generic_leef` | Any | IBM LEEF 1.0/2.0 | header and attributes |
 | `generic` | Any | RFC 3164/5424 syslog, key=value, JSON | common field names; everything else preserved in unmapped |
@@ -191,16 +191,20 @@ Transport: JSON log files, shipped by Fluent Bit / Vector, or TRACELOG's file in
 
 ### Snort 2 / Snort 3
 
-Transport: Alerts to local syslog, relayed by rsyslog. Parser pack: `snort_alert`.
+Transport: Alerts to local syslog relayed by rsyslog, or an alert file tailed as a file input. Parser pack: `snort_alert`.
 
 1. Send alerts to syslog, then relay local5 with rsyslog exactly as for Suricata.
+2. Whichever output plugin the sensor already uses is read: alert_fast, alert_syslog, alert_csv (Snort's own column order and the shorter one pfSense writes) and Snort 3's alert_json. Point a file input at the alert file if it is not going through syslog.
+3. alert_full writes a block of lines per alert: TRACELOG reads the header line as the finding and leaves the packet lines to the evidence-based parser, rather than joining lines across a stream and risking one alert's addresses on another's finding. Prefer alert_fast or alert_json.
 
 ```text
 # Snort 2 (snort.conf)
 output alert_syslog: LOG_LOCAL5 LOG_ALERT
+output alert_csv: alert.csv default        # or tail this file with a `files:` input
 
 -- Snort 3 (snort.lua)
 alert_syslog = { facility = 'local5', level = 'alert' }
+alert_json = { file = true, fields = 'seconds action class dir src_addr src_port dst_addr dst_port proto msg sid gid rev rule priority service timestamp' }
 ```
 
 ### Any other device (CEF, LEEF, RFC 3164/5424, key=value, JSON)

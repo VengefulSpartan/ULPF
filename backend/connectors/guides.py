@@ -194,13 +194,24 @@ local5.* action(type="omfwd" target="{host}" port="{syslog_port}" protocol="tcp"
     },
     {
         "key": "snort", "name": "Snort 2 / Snort 3", "pack": "snort_alert",
-        "transport": "Alerts to local syslog, relayed by rsyslog",
-        "steps": ["Send alerts to syslog, then relay local5 with rsyslog exactly as for Suricata."],
+        "transport": "Alerts to local syslog relayed by rsyslog, or an alert file tailed as a file input",
+        "steps": [
+            "Send alerts to syslog, then relay local5 with rsyslog exactly as for Suricata.",
+            "Whichever output plugin the sensor already uses is read: alert_fast, alert_syslog, alert_csv "
+            "(Snort's own column order and the shorter one pfSense writes) and Snort 3's alert_json. Point a "
+            "file input at the alert file if it is not going through syslog.",
+            "alert_full writes a block of lines per alert: TRACELOG reads the header line as the finding and "
+            "leaves the packet lines to the evidence-based parser, rather than joining lines across a stream "
+            "and risking one alert's addresses on another's finding. Prefer alert_fast or alert_json.",
+        ],
         "snippet": """# Snort 2 (snort.conf)
 output alert_syslog: LOG_LOCAL5 LOG_ALERT
+output alert_csv: alert.csv default        # or tail this file with a `files:` input
 
 -- Snort 3 (snort.lua)
-alert_syslog = { facility = 'local5', level = 'alert' }""", "lang": "text",
+alert_syslog = { facility = 'local5', level = 'alert' }
+alert_json = { file = true, fields = 'seconds action class dir src_addr src_port dst_addr dst_port proto msg sid gid rev rule priority service timestamp' }""",
+        "lang": "text",
     },
     {
         "key": "generic", "name": "Any other device (CEF, LEEF, RFC 3164/5424, key=value, JSON)", "pack": "generic",
