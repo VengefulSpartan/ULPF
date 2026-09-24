@@ -156,3 +156,13 @@ def test_envelope_keeps_structured_data_and_message():
 def test_envelope_handles_asa_without_hostname():
     env = split_envelope(ASA_DENY)
     assert env.hostname is None and env.message.startswith("%ASA-4-106023")
+
+
+@pytest.mark.parametrize("status, outcome", [("success", "success"), ("failure", "failure"), ("failed", "failure")])
+def test_fortigate_login_outcome_follows_the_status_field(status, outcome):
+    # the description says only "login"; status= is the device's verdict and must not be ignored
+    line = ('date=2026-09-20 time=14:00:00 devname="FGT-VPN" type="event" subtype="vpn" action="login" '
+            f'status="{status}" user="bob" srcip=198.51.100.22 dstip=10.0.1.15')
+    fmt, parsed, _ = norm(line)
+    assert fmt == "fortinet_fortigate" and parsed["auth_status"] == outcome and parsed["action"] == outcome
+

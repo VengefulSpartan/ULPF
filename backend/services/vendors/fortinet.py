@@ -72,7 +72,15 @@ def parse(env: Envelope) -> Optional[dict]:
     if auth_scope and any(
             w in desc for w in ("login", "logon", "logout", "auth", "tunnel-up", "tunnel-down")):
         logoff = any(w in desc for w in ("logout", "logoff", "tunnel-down"))
-        failed = any(w in desc for w in ("fail", "denied", "invalid", "reject"))
+        # status= is the device's own verdict on admin and VPN logins; the words in the description
+        # are the fallback for the events that carry none
+        status = str(kv.get("status") or "").lower()
+        if status in ("success", "succeeded"):
+            failed = False
+        elif status in ("failure", "failed", "fail", "denied"):
+            failed = True
+        else:
+            failed = any(w in desc for w in ("fail", "denied", "invalid", "reject"))
         return event(VENDOR, PRODUCT, AUTHENTICATION, AUTH_LOGOFF if logoff else AUTH_LOGON,
                      "Logoff" if logoff else "Logon", vendor_fields=kv,
                      action="failure" if failed else "success",
