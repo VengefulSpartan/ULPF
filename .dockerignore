@@ -1,0 +1,64 @@
+# What `docker build` may see. `COPY . .` copies everything that is not listed here into the
+# image, and an image is easy to push, share and pull apart: a secret that reaches a layer has
+# left the machine. So the rule is the reverse of .gitignore's — list what the running service
+# does not need, starting with anything that could hold a secret or someone's data.
+
+# Secrets. They reach the container as environment variables at run time, never through a layer.
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
+**/id_rsa*
+**/id_ed25519*
+
+# Runtime data: the database and its archive of every log line, exports, dead letters, spool,
+# file-tail offsets, and the third-party sample corpora. The container gets its own data volume.
+data/*
+!data/samples/
+.data/
+suricata-logs/
+
+# Version control, CI and editor state
+.git/
+.gitignore
+.gitattributes
+.github/
+.vscode/
+.idea/
+**/.DS_Store
+
+# Local Python environments, caches and build output
+venv/
+.venv/
+env/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Not part of the running service: tests, documentation, notes, recordings, the leftovers of the
+# archived legacy app, and the files that describe the image itself
+tests/
+docs/
+Claude outputs/
+*.md
+!README.md
+*.mp4
+*.mov
+core/
+api/
+ingest/
+rca/
+storage/
+ui/
+Dockerfile
+.dockerignore
+docker-compose*.yml
