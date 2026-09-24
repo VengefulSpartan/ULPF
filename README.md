@@ -27,6 +27,7 @@
 9. [Plug-and-Play Connectors: Log Sources → TRACELOG → SIEM / Observability](#9-plug-and-play-connectors)
 10. [Log Formats TRACELOG Has Never Seen: Detect, Learn, Approve, Re-parse](#10-log-formats-tracelog-has-never-seen)
 11. [Measured Performance](#11-measured-performance)
+12. [Tested on Real, Third-Party Logs](#12-tested-on-real-third-party-logs)
 
 ---
 
@@ -827,8 +828,43 @@ were, `tests/test_throughput.py` proves it, and the unseen-format score is uncha
 18 missed, **0 wrong**.
 
 To measure it on your own machine, and to set the project up on a machine that has never seen it,
-follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 230 passed), run, and the
+follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 246 passed), run, and the
 three benchmark commands including `-w N` for N ingest shards, each with its own hash chain.
 
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately
 left alone, and the measured cost of the next three levers.
+
+---
+
+## 12. Tested on Real, Third-Party Logs
+
+The sample lines in `tests/` were written by this team from vendor documentation. To check the
+engine against lines nobody here wrote, `scripts/evaluate_public_samples.py` fetches two public
+corpora at pinned commits (neither is committed: they carry their owners' terms) and runs every
+line through the real pipeline:
+
+- **Elastic integrations** — the sample logs Elastic's own parsers are tested against, for 37
+  perimeter products (firewalls, IDS/IPS, WAFs, proxies, routers, DNS, NAC) plus CEF, each paired
+  with the event Elastic's parser produced. Those events are an independent answer key for source
+  and destination addresses and ports.
+- **Loghub** — 2,000-line samples of real OpenSSH, Linux, Apache, Proxifier and Windows logs.
+
+```bash
+python scripts/evaluate_public_samples.py --markdown docs/PUBLIC_SAMPLES.md
+```
+
+Result on the current build: **17,768 real lines from 43 sources, 0 crashes, 0 events failing OCSF
+validation, and all 17,768 archived and hash-chained with the chain verified.** Of 13,633 address
+and port fields Elastic's parsers name, 8,693 agree, 4,229 are left empty (no pack for that product
+yet, or the line does not say), and 711 disagree. The disagreements are explained from evidence in
+the corpus itself, and only 3 cannot be: Elastic's `cisco_asa` and `cisco_ftd` packages read
+"Built outbound" in opposite directions (312), and Cisco Teardown messages, which do not say who
+opened the connection, take their direction here from the connection's own Built message, where
+Elastic reads them in written order (396) — on half of those Elastic's own event for the Built
+message agrees with TRACELOG, so its two events for one connection contradict each other. Every
+disagreement is in [`docs/PUBLIC_SAMPLES.md`](docs/PUBLIC_SAMPLES.md).
+
+Scoring real logs found a real defect: the ASA pack read a Teardown's first address as its source,
+so every outbound DNS lookup's teardown came *from* port 53. It now joins each Teardown to its Built
+message by device, connection id and both ends, and leaves source and destination empty when the
+Built message was not seen, rather than guess.

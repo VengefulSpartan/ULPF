@@ -35,12 +35,17 @@ existing chain, so it is a versioned decision, never a side effect of a refactor
 ## Before you say something works
 
 ```bash
-pytest -q                                   # 230 passing
+pytest -q                                   # 246 passing
 python scripts/evaluate_unseen_formats.py   # 85 correct, 18 missed, 0 WRONG
 python scripts/benchmark.py -n 20000 -b 1000 --read
+python scripts/evaluate_public_samples.py   # real third-party logs: 0 crashes, 0 OCSF-invalid, 3 unexplained
 ```
 
-Those three are the project's own acceptance test. The benchmark is also how any performance claim
+Those four are the project's own acceptance test. The last one fetches Elastic's and Loghub's
+public sample logs into `data/public_samples/` (git-ignored, never committed) and regenerates
+`docs/PUBLIC_SAMPLES.md` with `--markdown docs/PUBLIC_SAMPLES.md`. A disagreement with Elastic is
+not automatically our error — their answer key contradicts itself in places — but it is only ever
+explained from evidence in the corpus, never by a list of excuses. The benchmark is also how any performance claim
 gets made: measured, on stated hardware, with the script in the repo. On a 2-core box it reports
 about 2,700 events/s single process and 4,866 with `-w 2`. Quote a rate with its hardware beside
 it, and never a round number that no run produced.
@@ -65,8 +70,8 @@ Create new commits; never rewrite published history and never skip hooks.
 
 - `.env` is never committed. Secrets come from the environment; config files reference `${VAR}`.
   Never hardcode a token or ask anyone to paste one into a file.
-- The third-party vendor sample corpus (Elastic integrations fixtures) is **not** committed — it is
-  Elastic-licensed. Fetch it when scoring, keep it out of git.
+- The third-party sample corpora (Elastic integrations fixtures, Loghub) are **not** committed —
+  Elastic License 2.0 and research-use terms. `data/public_samples/` is git-ignored; keep it so.
 - `Claude outputs/` is the user's own folder. Do not commit it, do not delete it.
 - Ask before deleting any of the user's files, including the leftover test YAMLs in `core/plugins`.
 - The legacy parallel app was archived on branch `archive/legacy-app`. Do not resurrect it.
@@ -86,7 +91,7 @@ backend/services/
   storage/             SQLite schema, migrations, indexes
 frontend/              Streamlit dashboard, one module per page
 scripts/               benchmark, unseen-format scoring, sample sender, connector docs
-tests/                 230 tests; conftest.py gives every test an isolated database
+tests/                 246 tests; conftest.py gives every test an isolated database
 ```
 
 `backend/services/ingestion/stream.py` is the hot path: one transaction per batch, the chain head
