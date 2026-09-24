@@ -89,9 +89,11 @@ With Docker instead of Python:
 
 ```bash
 docker compose up --build
+sh scripts/check_image.sh     # optional: checks the image holds no secret, database or compiler
 ```
 
-Same ports, and syslog is published on 514 as well as 5514.
+Same ports, and syslog is published on 514 as well as 5514. For a machine with no internet access,
+see [AIRGAP.md](AIRGAP.md).
 
 ## 5. Measure the throughput
 
