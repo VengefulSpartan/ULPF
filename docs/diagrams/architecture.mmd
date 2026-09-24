@@ -1,0 +1,89 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Helvetica, Arial, sans-serif", "fontSize": "15px", "primaryColor": "#ffffff", "primaryBorderColor": "#5b6b7f", "primaryTextColor": "#1f2933", "lineColor": "#5b6b7f", "clusterBkg": "#f6f8fa", "clusterBorder": "#c3ccd6"}, "flowchart": {"curve": "basis", "nodeSpacing": 28, "rankSpacing": 42, "wrappingWidth": 420}}}%%
+flowchart TB
+  %% TRACELOG architecture. Rendered copies: docs/diagrams/architecture.svg and .png
+  %% Every box is code in this repository; the folder is in brackets.
+
+  subgraph SRC["Perimeter log sources"]
+    direction LR
+    FW["Firewalls / NGFWs<br/>Palo Alto · FortiGate · Cisco ASA, FTD<br/>Check Point · Juniper SRX · Sophos<br/>SonicWall · pfSense"]
+    IDS["IDS / IPS<br/>Suricata · Zeek · Snort"]
+    MISC["VPN · proxies · WAFs · routers<br/>Windows Security · CSV exports<br/>formats with no parser yet"]
+    FWD["Forwarders<br/>rsyslog · Fluent Bit · Vector<br/>Cribl · OTel Collector · Kafka"]
+    FW ~~~ IDS ~~~ MISC ~~~ FWD
+  end
+
+  subgraph IN["Inputs  [connectors/inputs, api/receivers.py]"]
+    direction LR
+    SYS["Syslog<br/>UDP · TCP · TLS"]
+    HTTP["HTTP receivers<br/>Splunk HEC · OTLP/HTTP · NDJSON"]
+    TAIL["File tail<br/>offsets survive restarts"]
+    KAF["Kafka<br/>consumer"]
+    UP["Upload · REST API<br/>straight to the writer"]
+    SYS ~~~ HTTP ~~~ TAIL ~~~ KAF ~~~ UP
+  end
+
+  subgraph ENG["Connector engine  [connectors/engine.py]"]
+    direction LR
+    Q[["Ingest queue<br/>batches of 1,000"]]
+    SPOOL[("Overflow spool<br/>replayed after a burst")]
+    Q -. "full" .-> SPOOL
+  end
+
+  subgraph CORE["One writer for every path, one SQLite transaction per batch  [ingestion/stream.py]"]
+    direction LR
+    KEEP["① Keep the bytes<br/>framing recorded · UTF-8 or Latin-1<br/>SHA-256 of the bytes received"]
+    PARSE["② Parse: the first that applies<br/>CSV header → 12 vendor packs →<br/>learned parsers → CEF / LEEF →<br/>evidence-based generic parser"]
+    NORM["③ Normalise to OCSF 1.1.0<br/>4001 · 3002 · 2004 · 0<br/>register the device as a source"]
+    LINK["④ Hash-chain and store<br/>H(prev : seq : raw_hash : canonical JSON)"]
+    KEEP --> PARSE --> NORM --> LINK
+  end
+
+  subgraph DB["Store: SQLite in WAL mode  [storage/db.py]"]
+    direction LR
+    RAW[("raw_logs<br/>byte-exact archive<br/>full-text search")]
+    EVT[("normalized_events<br/>OCSF · chained revisions")]
+    LED[("integrity_ledger<br/>event hash chain")]
+    FMT[("log_formats · parsers<br/>format registry")]
+    DLED[("delivery ledger<br/>hash-chained outcomes")]
+    RAW ~~~ EVT ~~~ LED ~~~ FMT ~~~ DLED
+  end
+
+  subgraph OUT["Outputs: own queue, batching, retries each  [connectors/outputs]"]
+    direction LR
+    ROUTER{"Router<br/>per-output filters"}
+    SINKS["15 output types<br/>Splunk HEC · Elasticsearch · OpenSearch · Wazuh<br/>Sentinel · Loki · OTLP · Datadog · New Relic · webhook<br/>syslog CEF / LEEF / JSON · GELF · Kafka · file · Parquet"]
+    DL[("Dead letters<br/>auto-replay when the<br/>destination recovers")]
+    ROUTER --> SINKS
+    SINKS -. "refused or down" .-> DL
+  end
+
+  subgraph DEST["SOC and data lake"]
+    direction LR
+    SIEM["SIEMs<br/>Splunk · Elastic · Sentinel · QRadar<br/>ArcSight · Wazuh · Graylog"]
+    LAKE["Data lakes<br/>Amazon Security Lake layout<br/>Parquet: DuckDB · Spark · Athena"]
+    SIEM ~~~ LAKE
+  end
+
+  subgraph OPS["Operators  [frontend, backend/api]"]
+    direction LR
+    DASH["Streamlit dashboard :8501"]
+    API["FastAPI :8000<br/>REST · Swagger UI served locally"]
+    SVC["Chain verification and tamper detection<br/>Reconciliation · audit report PDF / JSON<br/>Parser Studio: learn → review → approve → re-parse<br/>Correlation rules with their evidence"]
+    DASH --> API --> SVC
+  end
+
+  SRC --> IN
+  IN --> ENG
+  ENG --> CORE
+  CORE --> DB
+  CORE -- "after commit" --> OUT
+  OUT --> DEST
+  OUT -. "every outcome" .-> DB
+  DB <--> OPS
+
+  classDef store fill:#eaf2fb,stroke:#3b6ea5,color:#10263d
+  classDef step fill:#fff6e5,stroke:#b7791f,color:#3d2a07
+  classDef ext fill:#eef6ee,stroke:#4a7a4a,color:#16301a
+  class RAW,EVT,LED,FMT,DLED,SPOOL,DL store
+  class KEEP,PARSE,NORM,LINK step
+  class FW,IDS,MISC,FWD,SIEM,LAKE ext

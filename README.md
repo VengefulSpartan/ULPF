@@ -1,6 +1,12 @@
 # TRACELOG — Universal Log Pre-processing Framework
 ### Enterprise Perimeter Telemetry Ingestion, OCSF Normalization, Cryptographic Lineage & Cross-Source Root Cause Analysis
 
+**Start here:** [Architecture, two pages with the diagram](docs/ARCHITECTURE.md) ·
+[System design](docs/SYSTEM_DESIGN.md) · [End-to-end flow of one log line](docs/END_TO_END_FLOW.md) ·
+[Run it on a new machine](docs/RUNBOOK.md) · [Results on real logs](docs/PUBLIC_SAMPLES.md)
+
+![TRACELOG architecture](docs/diagrams/architecture.png)
+
 ---
 
 ## 📑 Table of Contents
@@ -830,7 +836,7 @@ were, `tests/test_throughput.py` proves it, and the unseen-format score is uncha
 18 missed, **0 wrong**.
 
 To measure it on your own machine, and to set the project up on a machine that has never seen it,
-follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 281 passed), run, and the
+follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 287 passed), run, and the
 three benchmark commands including `-w N` for N ingest shards, each with its own hash chain.
 
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately
