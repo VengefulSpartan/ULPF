@@ -5,9 +5,13 @@ firewalls, IDS/IPS, VPN gateways and proxies, archives every line byte-for-byte,
 normalises it to OCSF 1.1.0, links it into a hash chain and forwards it to whatever the SOC runs.
 Built for SIH 2026, problem statement 26156 (NTRO).
 
-`README.md` is the overview. `docs/PARSING.md` explains the four-tier parser, `docs/PERFORMANCE.md`
-what was optimised and what the numbers are, `docs/RUNBOOK.md` how to install, run and measure on a
-fresh machine, `docs/CONNECTORS.md` the inputs and outputs.
+`docs/ARCHITECTURE.md` is the two-page overview with the diagram (source: `docs/diagrams/architecture.mmd`;
+re-render the PNG/SVG after changing it, and `tests/test_docs.py` checks the two agree).
+`docs/SYSTEM_DESIGN.md` explains each component and decision, `docs/END_TO_END_FLOW.md` follows one line
+through the code (`scripts/trace_line.py` prints it; `tests/test_trace_line.py` keeps them in step).
+`docs/PARSING.md` explains the parser tiers, `docs/PERFORMANCE.md` what was optimised and what the
+numbers are, `docs/RUNBOOK.md` how to install, run and measure on a fresh machine, `docs/CONNECTORS.md`
+the inputs and outputs, `docs/AIRGAP.md` offline deployment.
 
 ## The rules this project is built on
 
@@ -38,7 +42,7 @@ existing chain, so it is a versioned decision, never a side effect of a refactor
 ## Before you say something works
 
 ```bash
-pytest -q                                   # 281 passing
+pytest -q                                   # 287 passing
 python scripts/evaluate_unseen_formats.py   # 85 correct, 18 missed, 0 WRONG
 python scripts/benchmark.py -n 20000 -b 1000 --read
 python scripts/evaluate_public_samples.py   # real third-party logs: 0 crashes, 0 OCSF-invalid, 3 unexplained
@@ -94,7 +98,7 @@ backend/services/
   storage/             SQLite schema, migrations, indexes
 frontend/              Streamlit dashboard, one module per page
 scripts/               benchmark, unseen-format scoring, sample sender, connector docs
-tests/                 281 tests; conftest.py gives every test an isolated database
+tests/                 287 tests; conftest.py gives every test an isolated database
 ```
 
 `backend/services/ingestion/stream.py` is the hot path: one transaction per batch, the chain head
