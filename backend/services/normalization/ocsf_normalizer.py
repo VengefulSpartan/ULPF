@@ -259,7 +259,11 @@ class OCSFNormalizer:
             except (ValueError, TypeError):
                 pass
 
-        src_endpoint = Endpoint(ip=str(src_ip) if src_ip else None, port=src_port)
+        # a pack that knows an endpoint by name only (Cisco ASA with "names" configured writes the
+        # object name where the address would be) passes it as src_hostname / dst_hostname
+        src_host = data.get("src_hostname")
+        src_endpoint = Endpoint(ip=str(src_ip) if src_ip else None, port=src_port,
+                                hostname=str(src_host) if src_host else None)
 
         dst_ip = cls.find_first(data, cls.DST_IP_ALIASES)
         dst_port_raw = cls.find_first(data, cls.DST_PORT_ALIASES)
@@ -270,11 +274,13 @@ class OCSFNormalizer:
             except (ValueError, TypeError):
                 pass
 
-        dst_endpoint = Endpoint(ip=str(dst_ip) if dst_ip else None, port=dst_port)
+        dst_host = data.get("dst_hostname")
+        dst_endpoint = Endpoint(ip=str(dst_ip) if dst_ip else None, port=dst_port,
+                                hostname=str(dst_host) if dst_host else None)
 
         # 3. Connection & Traffic
-        for side, ip, port in (("src", src_ip, src_port), ("dst", dst_ip, dst_port)):
-            if port is not None and not ip:
+        for side, ip, port, host in (("src", src_ip, src_port, src_host), ("dst", dst_ip, dst_port, dst_host)):
+            if port is not None and not ip and not host:
                 unmapped[f"{side}_port_without_address"] = port
                 if side == "src":
                     src_endpoint = Endpoint(ip=None, port=None)

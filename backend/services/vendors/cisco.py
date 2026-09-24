@@ -3,9 +3,23 @@ Cisco ASA and Firepower Threat Defense (FTD) syslog messages: %ASA-<level>-<id>
 or %FTD-<level>-<id>. Message layouts follow Cisco's "ASA Series Syslog
 Messages" reference. Unrecognised message ids are kept as Base Events with
 their text, so nothing is dropped.
+
+Connection direction. A Built message says who opened the connection
+("Built outbound ... for outside:A to inside:B" means B, inside, opened it to A).
+The Teardown message for the same connection lists the two ends in the same
+order but does not say which one opened it, so reading its first address as the
+source turns every outbound DNS lookup into "from port 53". The pack therefore
+remembers the direction of recent Built messages, keyed by device and connection
+id, and a Teardown takes its direction from its own connection's Built message.
+When that message was not seen (it arrived before a restart, or went to another
+worker) the Teardown keeps both ends in vendor_fields and leaves source and
+destination empty: a missing field beats a wrong field.
 """
+import ipaddress
 import re
-from typing import Optional
+import threading
+from collections import OrderedDict
+from typing import Hashable, Optional, Tuple
 
 from .common import (
     AUTH_LOGOFF, AUTH_LOGON, AUTHENTICATION, BASE_EVENT, DETECTION_FINDING, NETWORK_ACTIVITY,
@@ -44,7 +58,7 @@ RULES = {
     "logout": re.compile(r"User logged out: Uname: (?P<user>.+)$"),
     "icmp": re.compile(
         r"(?P<verb>Built|Teardown) (?:(?P<dir>inbound|outbound) )?ICMP connection (?:(?P<cid>\d+) )?for faddr "
-        r"(?P<fip>[^\s/]+)/\d+(?:\([^)]*\))? gaddr (?P<gip>[^\s/]+)/\d+ laddr (?P<lip>[^\s/]+)/\d+"),
+        r"(?P<fip>[^\s/]+)/(?P<fid>\d+)(?:\([^)]*\))? gaddr (?P<gip>[^\s/]+)/\d+ laddr (?P<lip>[^\s/]+)/(?P<lid>\d+)"),
     "deny_acl": re.compile(
         r"Deny (?P<proto>\S+) src (?P<sif>[^:\s]+):(?P<sip>[^\s/(]+)(?:/(?P<sport>\d+))?(?:\([^)]*\))? dst "
         r"(?P<dif>[^:\s]+):(?P<dip>[^\s/(]+)(?:/(?P<dport>\d+))?(?:\([^)]*\))?(?: \(?type \d+, code \d+\)?,?)? "
@@ -82,6 +96,83 @@ RULES = {
 }
 
 
+class _OpenConnections:
+    """Direction of recently built connections, so their Teardown can be read the same way.
+
+    Keyed by device and connection id, and each entry also keeps the connection's two ends: a
+    Teardown takes the direction only if its ends match, so two devices that send no hostname
+    and happen to reuse a connection id cannot lend each other a direction. Bounded: the oldest
+    entry is forgotten first, and an entry is dropped when its Teardown arrives, so memory stays
+    flat on a busy firewall. Locked because receivers parse on several threads.
+    """
+
+    def __init__(self, limit: int = 65536):
+        self.limit = limit
+        self._items: "OrderedDict[Hashable, Tuple[str, Tuple]]" = OrderedDict()
+        self._lock = threading.Lock()
+
+    def remember(self, key: Hashable, ends: Tuple, direction: str) -> None:
+        with self._lock:
+            self._items[key] = (direction, ends)
+            self._items.move_to_end(key)
+            while len(self._items) > self.limit:
+                self._items.popitem(last=False)
+
+    def take(self, key: Hashable, ends: Tuple) -> Optional[str]:
+        with self._lock:
+            entry = self._items.get(key)
+            if entry is None or entry[1] != ends:
+                return None
+            del self._items[key]
+            return entry[0]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+
+OPEN_CONNECTIONS = _OpenConnections()
+
+
+def _connection(env: Envelope, g: dict) -> Tuple[Hashable, Tuple]:
+    """(key, ends) of the connection a Built or Teardown message is about. Connection ids are
+    unique per device; ICMP messages often carry none, so their addresses and ICMP ids stand in."""
+    if g.get("fid") is not None or g.get("lid") is not None:  # ICMP: faddr / laddr
+        ends = (g.get("fip"), g.get("fid"), g.get("lip"), g.get("lid"))
+    else:
+        ends = (g.get("fip"), g.get("fport"), g.get("tip"), g.get("tport"))
+    key = (env.hostname or "", g["cid"]) if g.get("cid") else (env.hostname or "", "icmp") + ends
+    return key, ends
+
+
+def _address(value: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """(ip, hostname). With "names" configured the ASA writes an object name such as
+    OCSP_Server where the address would be: that is the endpoint's name, not a bad address."""
+    if not value:
+        return None, None
+    try:
+        ipaddress.ip_address(value)
+        return value, None
+    except ValueError:
+        return None, value
+
+
+def _ends(direction: Optional[str], outside: str, inside: str):
+    """Which captured end is the source and which the destination.
+
+    The ASA always writes the outside end first. Inbound: outside opened the connection.
+    Outbound: inside did. Unknown: neither is assigned (``none_`` captures nothing).
+    """
+    if direction == "inbound":
+        return outside, inside
+    if direction == "outbound":
+        return inside, outside
+    return "none_", "none_"
+
+
 def detect(env: Envelope) -> bool:
     return bool(_TAG.search(env.message))
 
@@ -99,9 +190,10 @@ def parse(env: Envelope) -> Optional[dict]:
     vf = {"message_id": msg_id, "level": level, "text": text}
 
     def net(activity, g, src="s", dst="d", action=None, **extra):
+        (sip, shost), (dip, dhost) = _address(g.get(f"{src}ip")), _address(g.get(f"{dst}ip"))
         return event(vendor, product, NETWORK_ACTIVITY, activity, vendor_fields={**vf, **g},
-                     src_ip=g.get(f"{src}ip"), src_port=to_int(g.get(f"{src}port")),
-                     dst_ip=g.get(f"{dst}ip"), dst_port=to_int(g.get(f"{dst}port")),
+                     src_ip=sip, src_hostname=shost, src_port=to_int(g.get(f"{src}port")),
+                     dst_ip=dip, dst_hostname=dhost, dst_port=to_int(g.get(f"{dst}port")),
                      proto=(g.get("proto") or "").lower() or None, action=action, **extra, **base)
 
     def auth(g, ok: bool, activity=AUTH_LOGON, src_ip=None):
@@ -114,21 +206,34 @@ def parse(env: Envelope) -> Optional[dict]:
         g = RULES["built"].search(text)
         if g:
             g = g.groupdict()
-            src, dst = ("f", "t") if g["dir"] == "inbound" else ("t", "f")
+            OPEN_CONNECTIONS.remember(*_connection(env, g), direction=g["dir"])
+            src, dst = _ends(g["dir"], "f", "t")
             return net(NA_OPEN, g, src, dst, action="allow", connection_id=g["cid"], direction=g["dir"])
     if msg_id in ("302014", "302016", "302304"):
         g = RULES["teardown"].search(text)
         if g:
             g = g.groupdict()
-            return net(NA_CLOSE, g, "f", "t", action="allow", connection_id=g["cid"],
+            direction = OPEN_CONNECTIONS.take(*_connection(env, g))
+            g["direction_source"] = "built message" if direction else "not seen"
+            src, dst = _ends(direction, "f", "t")
+            return net(NA_CLOSE, g, src, dst, action="allow", connection_id=g["cid"], direction=direction,
                        bytes_total=to_int(g.get("bytes")), close_reason=g.get("reason"))
     if msg_id in ("302020", "302021"):
         g = RULES["icmp"].search(text)
         if g:
             g = g.groupdict()
-            src, dst = ("l", "f") if g.get("dir") == "outbound" else ("f", "l")
+            key, ends = _connection(env, g)
+            if g["verb"] == "Built":
+                direction = g.get("dir")
+                if direction:
+                    OPEN_CONNECTIONS.remember(key, ends, direction=direction)
+            else:
+                direction = OPEN_CONNECTIONS.take(key, ends)
+                g["direction_source"] = "built message" if direction else "not seen"
+            src, dst = _ends(direction, "f", "l")
             g["proto"] = "icmp"
-            return net(NA_OPEN if g["verb"] == "Built" else NA_CLOSE, g, src, dst, action="allow")
+            return net(NA_OPEN if g["verb"] == "Built" else NA_CLOSE, g, src, dst, action="allow",
+                       connection_id=g.get("cid"), direction=direction)
     if msg_id in ("302017", "302018"):
         g = RULES["gre"].search(text)
         if g:
