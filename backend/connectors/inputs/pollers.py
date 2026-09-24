@@ -12,11 +12,12 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional, Tuple
 
 from backend.connectors.config import FileInput, KafkaInput as KafkaInputConfig
 from backend.connectors.inputs.syslog import InputStats
-from backend.services.ingestion.stream import InboundRecord
+from backend.services.ingestion.stream import InboundRecord, decode_raw
+from backend.services.parsing.csvheader import header_of
 
 logger = logging.getLogger("tracelog.inputs")
 Submit = Callable[[List[InboundRecord]], None]
@@ -29,6 +30,9 @@ class FileTailInput(threading.Thread):
         self.stats = InputStats(cfg.name, "file", ", ".join(cfg.paths))
         self.state_path = Path(state_dir) / f"filetail-{cfg.name}.json"
         self.offsets: Dict[str, Dict[str, int]] = self._load()
+        # CSV header of each followed file, by path: (inode, header or None). Read from the file itself,
+        # so it is known again after a restart that resumes mid-file.
+        self.headers: Dict[str, Tuple[int, Optional[dict]]] = {}
         self._stop_event = threading.Event()
 
     def _load(self) -> Dict[str, Dict[str, int]]:
@@ -42,6 +46,25 @@ class FileTailInput(threading.Thread):
         tmp = self.state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.offsets))
         os.replace(tmp, self.state_path)
+
+    def _csv_header(self, path: str, inode: int) -> Optional[dict]:
+        """The file's CSV header, if its first line is one (csvheader.py). Decided only once the file has
+        a second complete line to confirm it against; until then there is none, and the file is looked
+        at again on the next poll."""
+        known = self.headers.get(path)
+        if known and known[0] == inode:
+            return known[1]
+        try:
+            with open(path, "rb") as fh:
+                head = fh.read(64 * 1024)
+        except OSError:
+            return None
+        lines = [decode_raw(l)[0] for l in head.split(b"\n")[:3]]
+        if len(lines) < 3:  # fewer than two complete lines so far
+            return None
+        header = header_of(lines[0], lines[1])
+        self.headers[path] = (inode, header)
+        return header
 
     def poll_once(self) -> int:
         total = 0
@@ -58,18 +81,30 @@ class FileTailInput(threading.Thread):
                 if st.st_size == state["offset"]:
                     self.offsets[path] = state
                     continue
+                from_start = state["offset"] == 0
                 with open(path, "rb") as fh:
                     fh.seek(state["offset"])
                     chunk = fh.read(8 * 1024 * 1024)
                 end = chunk.rfind(b"\n")
                 if end < 0:
                     continue  # wait for the line to be completed
-                lines = [l for l in chunk[: end + 1].split(b"\n") if l.strip()]
+                raw_lines = chunk[: end + 1].split(b"\n")
+                header = self._csv_header(path, st.st_ino)
+                records = []
+                for i, l in enumerate(raw_lines):
+                    if not l.strip():
+                        continue
+                    hints: Dict[str, object] = {"file": path}
+                    if header and from_start and i == 0:
+                        hints["csv_header_row"] = True
+                    elif header:
+                        hints["csv_header"] = header
+                    records.append(InboundRecord(raw=l, transport="file", input_name=self.cfg.name, hints=hints))
+                lines = records
                 state["offset"] += end + 1
                 self.offsets[path] = state
                 if lines:
-                    self.submit([InboundRecord(raw=l, transport="file", input_name=self.cfg.name,
-                                               hints={"file": path}) for l in lines])
+                    self.submit(lines)
                     self.stats.hit(len(lines), end + 1)
                     total += len(lines)
         self._save()

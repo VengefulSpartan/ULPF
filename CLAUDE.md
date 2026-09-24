@@ -38,7 +38,7 @@ existing chain, so it is a versioned decision, never a side effect of a refactor
 ## Before you say something works
 
 ```bash
-pytest -q                                   # 246 passing
+pytest -q                                   # 281 passing
 python scripts/evaluate_unseen_formats.py   # 85 correct, 18 missed, 0 WRONG
 python scripts/benchmark.py -n 20000 -b 1000 --read
 python scripts/evaluate_public_samples.py   # real third-party logs: 0 crashes, 0 OCSF-invalid, 3 unexplained
@@ -94,7 +94,7 @@ backend/services/
   storage/             SQLite schema, migrations, indexes
 frontend/              Streamlit dashboard, one module per page
 scripts/               benchmark, unseen-format scoring, sample sender, connector docs
-tests/                 246 tests; conftest.py gives every test an isolated database
+tests/                 281 tests; conftest.py gives every test an isolated database
 ```
 
 `backend/services/ingestion/stream.py` is the hot path: one transaction per batch, the chain head
@@ -103,8 +103,10 @@ changing anything in it.
 
 ## Known gaps, if you are looking for work
 
-Ranked in `Claude outputs/TRACELOG-status-and-plan.md`. The short list: no API authentication or
-CORS restriction; the tamper endpoint is open; Kafka commits offsets before the batch is stored; the
-Parquet sink's paths are not Security Lake's layout; Snort's CSV, JSON and full alert formats are
-unhandled; services that run on a firewall host (DHCP, IPsec, DNS, proxies) have no packs, which is
-also the natural place to add OCSF classes 4002, 4003 and 4004.
+Ranked in `Claude outputs/TRACELOG-PS-compliance-audit.md`. The short list: no API authentication or
+CORS restriction, Streamlit XSRF protection off, and the tamper endpoint open; Kafka commits offsets
+before the batch is stored; the integrity chain is not signed or anchored outside the database;
+nothing yet demonstrates the "AI/ML-ready" claim; products whose real sample logs came out mostly
+empty have no pack (Cisco FTD 430002/430003 connection events, WatchGuard, Cisco IOS, ModSecurity,
+Squid); services that run on a firewall host (DHCP, IPsec, DNS, proxies) have no packs, which is also
+the natural place to add OCSF classes 4002, 4003 and 4004; no retention setting; no NetFlow/IPFIX.

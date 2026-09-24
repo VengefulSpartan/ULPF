@@ -12,7 +12,8 @@ transaction instead of a transaction per line.
 import logging
 from typing import Any, Dict, Iterable, List, Union
 
-from backend.services.ingestion.stream import FixedSource, InboundRecord, StoredEvent, StreamIngestor
+from backend.services.ingestion.stream import FixedSource, InboundRecord, StoredEvent, StreamIngestor, decode_raw
+from backend.services.parsing.csvheader import header_of
 
 logger = logging.getLogger("tracelog.pipeline")
 
@@ -75,15 +76,32 @@ class IngestionPipeline:
         lines = list(lines)
         ingestor = StreamIngestor(FixedSource(source_id))
         hints = {"vendor": source_vendor, "product": source_product}
+        per_line = csv_hints(lines, hints)
         ingested = 0
         for i in range(0, len(lines), BATCH):
-            records = [InboundRecord(raw=_as_bytes(line), transport=transport, input_name=transport, hints=hints)
-                       for line in lines[i:i + BATCH]]
+            records = [InboundRecord(raw=_as_bytes(line), transport=transport, input_name=transport, hints=h)
+                       for line, h in zip(lines[i:i + BATCH], per_line[i:i + BATCH])]
             stored = ingestor.ingest(records)
             ingested += len(stored)
             _route(stored)
         return {"total": len(lines), "ingested": ingested, "skipped_blank": len(lines) - ingested,
                 "failed": 0, "errors": []}
+
+
+def csv_hints(lines: List[Line], base: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Hints for each line of a file or batch: when its first non-blank line is a CSV header
+    (csvheader.py), that line is marked as the header and every line after it carries the header,
+    so its columns are read by name. Otherwise every line gets the base hints unchanged."""
+    first = [i for i, line in enumerate(lines) if decode_raw(_as_bytes(line))[0].strip()][:2]
+    header = None
+    if first:
+        texts = [decode_raw(_as_bytes(lines[i]))[0] for i in first]
+        header = header_of(texts[0], texts[1] if len(texts) > 1 else None)
+    if not header:
+        return [base] * len(lines)
+    start = first[0]
+    return [base if i < start else {**base, "csv_header_row": True} if i == start else {**base, "csv_header": header}
+            for i in range(len(lines))]
 
 
 def split_upload(content: bytes) -> List[bytes]:

@@ -11,9 +11,14 @@ Order:
      way: impossible values in a positional format mean drift, and the line falls through);
   3. evidence-based inference, which fills only fields it can justify and labels the
      event unverified.
+
+A line from a CSV file whose header row is known (csvheader.py) is read by column name before
+any of these: the file's own header says what its columns are, where a positional pack could
+only assume it. Its fields still come from the evidence rules, so it stays unverified.
 """
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.services.parsing.csvheader import pairs as csv_pairs
 from backend.services.parsing.inference import as_ip, as_port, infer, structure
 from backend.services.vendors import parse_vendor
 from backend.services.vendors.envelope import split_envelope
@@ -43,8 +48,26 @@ def validate_canonical(parsed: Dict[str, Any]) -> List[Tuple[str, str]]:
 POSITIONAL_PACKS = {"paloalto_panos", "pfsense_filterlog"}
 
 
-def parse_log(raw_text: str) -> Tuple[str, Dict[str, Any]]:
-    """Returns (parser that produced the fields, parsed_fields)."""
+def parse_log(raw_text: str, csv_header: Optional[Dict[str, Any]] = None,
+              csv_header_row: bool = False) -> Tuple[str, Dict[str, Any]]:
+    """Returns (parser that produced the fields, parsed_fields).
+
+    csv_header: the header of the CSV file this line came from ({"delimiter", "columns"}); a line
+    with exactly those columns is read as (column name, value) pairs.
+    csv_header_row: this line is that header. It is archived and chained like any line, marked as
+    the header, and not counted as a new log format.
+    """
+    if csv_header_row:
+        env = split_envelope(raw_text)
+        fmt, parsed = infer(raw_text, env, structure(env.message))
+        parsed["tracelog_parse"].update(csv_header_row=True,
+                                        parser="CSV header row: the column names of the lines after it")
+        return fmt, parsed
+    if csv_header:
+        cells = csv_pairs(raw_text, csv_header)
+        if cells:
+            st = {"kind": "csv", "delimiter": csv_header["delimiter"], "pairs": cells, "text": "", "prefix": ""}
+            return infer(raw_text, split_envelope(raw_text), st)
     drift: Optional[Dict[str, Any]] = None
     hit = parse_vendor(raw_text)
     if hit:

@@ -296,7 +296,7 @@ def _flatten(obj: Any, prefix: str = "") -> List[Tuple[str, Any]]:
 
 
 # structures read as key/value pairs; the rest (delimited, text) are read by position
-KEYED_KINDS = ("kv", "json", "xml", "cef", "leef")
+KEYED_KINDS = ("kv", "json", "xml", "cef", "leef", "csv")   # csv: a CSV line read by its file's header
 
 
 def structure(body: str) -> Dict[str, Any]:
