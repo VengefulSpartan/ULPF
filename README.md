@@ -152,8 +152,8 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 - **Role**: Models for Cross-Source Root Cause Analysis (USP 3).
 - **Classes**:
   - `ObservedFact`: Hard telemetric facts logged directly by appliances, anchored with `raw_hash` references.
-  - `InferredRelationship`: Analytical hypotheses derived from entity overlap and temporal proximity, with `confidence` scores and rationales.
-  - `IncidentSummary`: Complete cross-source incident dossier (`incident_id`, `title`, `severity`, `confidence_score`, `start_time`, `end_time`, `entities`, `observed_facts`, `inferred_relationships`, `mitre_tactics`, `recommendations`).
+  - `InferredRelationship`: A correlation rule that matched (login then activity, allowed connection then alert, port sweep), with the shared addresses, the time gap, the evidence list and a rationale that says what the evidence does not prove. No confidence score: nothing measures one.
+  - `IncidentSummary`: Cross-source correlation result (`incident_id`, `title`, `severity` — the highest a device reported, `start_time`, `end_time`, `entities`, `observed_facts`, `inferred_relationships`, `mitre_tactics`, `recommendations`).
 
 ---
 
@@ -260,7 +260,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 - **`backend/services/correlation/engine.py`**:
   - Temporal multi-device correlation across sliding windows (e.g. 15-30 minutes).
   - Tracks shared entities (`src_ip`, `dst_ip`, `user_name`).
-  - Categorizes findings into **Observed Facts** (verifiable telemetric records with raw hashes) and **Inferred Relationships** (causal hypotheses with confidence scores).
+  - Categorizes findings into **Observed Facts** (verifiable telemetric records with raw hashes) and **Inferred Relationships** (rules that matched, each with the evidence that made it match).
   - Identifies attack progression: VPN Authentication $\rightarrow$ Internal Scanning $\rightarrow$ Exploit Signature $\rightarrow$ Firewall Quarantine.
 
 #### Ingestion Pipeline
@@ -338,7 +338,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 
 #### `frontend/views/correlation_page.py` (USP 3)
 - **Role**: Cross-source Root Cause Analysis investigation workspace.
-- **Features**: Pivot IP search filter, multi-device incident header with confidence score, chronological Plotly investigation timeline, and side-by-side evidence separation (Observed Facts vs. Inferred Hypotheses).
+- **Features**: Pivot IP search filter, header with measured counts (events, devices, rules matched), chronological Plotly investigation timeline, and side-by-side evidence separation (Observed Facts vs. rules that matched, with their evidence).
 
 #### `frontend/views/schema_page.py`
 - **Role**: OCSF v1.1.0 schema dictionary explorer.
@@ -489,7 +489,7 @@ Perimeter defense relies on multiple distinct appliances that each observe only 
 
 #### Epistemological Fact vs. Inference Separation:
 - **Observed Facts**: Hard telemetric events recorded by the appliance hardware (e.g., "*Palo Alto NGFW logged action 'drop' on 10.0.1.15:49152 -> 192.168.1.50:445*"). Each fact includes its immutable raw SHA-256 hash.
-- **Inferred Relationships**: Causal hypotheses derived by analytical correlation (e.g., "*User session from 198.51.100.22 authenticated via VPN, followed 44 seconds later by an exploit signature targeting the internal DMZ*"). Each hypothesis includes an explicit confidence score and disclaimer stating that correlation does not equal confirmed causation.
+- **Inferred Relationships**: Rules that matched, each listed with the evidence that made it match (e.g., "*login by 'contractor_bob' succeeded; shared address 10.0.1.15; first later event 15 s after the login, from a different device*") and a rationale saying what that evidence does not prove. There are no confidence scores: an earlier version showed constants (88 %, 92 %, 85 %) that nothing measured, and they were removed.
 
 ---
 
@@ -593,7 +593,6 @@ CREATE TABLE incidents (
     incident_id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     severity TEXT NOT NULL,
-    confidence_score REAL NOT NULL,
     start_time TEXT NOT NULL,
     end_time TEXT NOT NULL,
     data_json TEXT NOT NULL,
@@ -768,7 +767,7 @@ not S3 objects, so the output still works air-gapped.
 
 A parser meeting an unfamiliar format can leave fields empty, or fill them with the wrong values. The second is the dangerous one, because a SIEM trusts what it is given. TRACELOG's rule is **empty rather than wrong**, in four layers (full detail in [docs/PARSING.md](docs/PARSING.md)):
 
-1. **Never confidently wrong.** Lines no pack recognises go to an evidence-based parser that fills a field only when the key names it (`srcIP`, `ip_client`, `destination-ip`) *and* the value is valid for it, or the line says the direction (`a:p -> b:q`, `from a to b`). Two addresses with nothing saying which is the source are left unassigned. Each event carries `unmapped.tracelog_parse` with `verified: false`, a confidence and a reason per field. Known packs are checked too: a pack producing impossible values (a firmware update shifted a column) is not passed on misaligned.
+1. **Never confidently wrong.** Lines no pack recognises go to an evidence-based parser that fills a field only when the key names it (`srcIP`, `ip_client`, `destination-ip`) *and* the value is valid for it, or the line says the direction (`a:p -> b:q`, `from a to b`). Two addresses with nothing saying which is the source are left unassigned. Each event carries `unmapped.tracelog_parse` with `verified: false`, an evidence score and a reason per field. Known packs are checked too: a pack producing impossible values (a firmware update shifted a column) is not passed on misaligned.
 2. **New formats are detected as formats.** Each line gets a structure-only format id; the registry counts lines per format, keeps samples, devices and first/last seen, and flags a known device whose format drifted. Parser Studio's **New log formats** tab lists them.
 3. **Learn from many lines, then approve.** A parser is learned from a format's samples (what each part of the line always is, the word before it, how its values are distributed), tested on held-out lines and compared with the generic parser. Fields that rest on position alone are marked *needs review*; the parser cannot be approved until a named person confirms or changes them. Approved parsers go live within seconds, without a restart, and their events say `verified: true` and who approved them.
 4. **Fix history without rewriting it.** Past lines of the format are re-parsed from the byte-for-byte archive as new chained events that name the event they supersede; the originals stay in the integrity chain, revisions are sent to the outputs, and reconciliation accounts for them.

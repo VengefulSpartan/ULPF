@@ -65,7 +65,7 @@ def render_new_formats() -> None:
         "Status": STATUS.get(f["status"], f["status"]), "Lines": f["count"], "Structure": f["kind"],
         "Format": _short(f["template"], 110), "Devices": ", ".join(list(f["sources"])[:3]),
         "Last seen": (f["last_seen"] or "")[:19].replace("T", " "),
-        "Generic confidence": f["avg_confidence"],
+        "Generic evidence score": f["avg_confidence"],
         "Drifted from": f.get("drift_from") or "",
     } for f in rows])
     st.dataframe(table, use_container_width=True, hide_index=True)
@@ -171,11 +171,11 @@ def _review(fid: str, parser: Dict[str, Any], vendor: str, product: str) -> None
         "slot": s["id"], "Field": FIELDS.get(s.get("role"), NONE), "Needs review": bool(s.get("needs_review")),
         "Confirm": False, "Part of the line": s["label"],
         "Examples": ", ".join(str(x) for x in s.get("examples", [])[:3]),
-        "Why": s.get("why") or "; ".join(s.get("alternatives", [])), "Confidence": s.get("confidence") or 0.0,
+        "Why": s.get("why") or "; ".join(s.get("alternatives", [])), "Evidence score": s.get("confidence") or 0.0,
     } for s in slots])
     edited = st.data_editor(
         df, key=f"slots_{pid}", hide_index=True, use_container_width=True,
-        disabled=["slot", "Part of the line", "Examples", "Confidence", "Needs review", "Why"],
+        disabled=["slot", "Part of the line", "Examples", "Evidence score", "Needs review", "Why"],
         column_config={
             "slot": None,
             "Field": st.column_config.SelectboxColumn(options=[NONE] + list(FIELDS.values()), required=True,
@@ -185,7 +185,11 @@ def _review(fid: str, parser: Dict[str, Any], vendor: str, product: str) -> None
             "Part of the line": st.column_config.TextColumn(width="medium"),
             "Examples": st.column_config.TextColumn(width="medium"),
             "Why": st.column_config.TextColumn(width="large"),
-            "Confidence": st.column_config.ProgressColumn(min_value=0.0, max_value=1.0, format="%.2f", width="small"),
+            "Evidence score": st.column_config.ProgressColumn(
+                min_value=0.0, max_value=1.0, format="%.2f", width="small",
+                help="How strong the kind of evidence is (a standard field name, a named key, what the values "
+                     "are, position alone) — a rule weight used against a threshold, not a measured probability. "
+                     "The parser's measured accuracy is in docs/PARSING.md and docs/PUBLIC_SAMPLES.md."),
         })
     original = {s["id"]: s.get("role") for s in slots}
     roles = {r["slot"]: LABEL_TO_ROLE.get(r["Field"]) for _, r in edited.iterrows()

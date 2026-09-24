@@ -6,7 +6,9 @@ from frontend.api_client import APIClient
 
 def render_correlation():
     st.markdown("## Correlation & Root Cause Analysis (RCA)")
-    st.caption("USP 3: Multi-device incident graph connecting firewalls, VPNs, IDS/IPS, and routers with evidence-based fact-vs-inference separation")
+    st.caption("Events from different devices that share an address close together in time. Observed facts are "
+               "stored events; relationships are rules that matched, shown with the evidence that made them match. "
+               "There are no confidence scores: nothing here measures one.")
 
     col_filter, col_run = st.columns([3, 1])
     with col_filter:
@@ -23,21 +25,22 @@ def render_correlation():
         return
 
     # Incident Overview Header
-    sev = incident.get("severity", "Medium")
-    badge_color = "error" if sev in ["High", "Critical"] else "warning"
-    conf = incident.get("confidence_score", 0.0)
+    sev = incident.get("severity", "Unknown")
+    badge_color = "error" if sev in ["High", "Critical", "Fatal"] else "warning"
+    links = incident.get("inferred_relationships", [])
 
     st.markdown(
         f"""
         <div style="background-color: #F4F7FA; border: 1px solid #DCE3EA; border-left: 5px solid #0077B6; border-radius: 6px; padding: 18px; margin: 15px 0;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <h3 style="margin:0; color:#123B5D;">{incident.get('title')}</h3>
-                <span class="badge badge-{badge_color}" style="font-size:0.9rem;">{sev.upper()} SEVERITY</span>
+                <span class="badge badge-{badge_color}" style="font-size:0.9rem;" title="Highest severity any device reported">{sev.upper()} SEVERITY</span>
             </div>
             <div style="margin-top: 8px; color: #475569;">
-                <b>Time Window</b>: {incident.get('start_time')} → {incident.get('end_time')} &nbsp;|&nbsp; 
-                <b>Confidence Score</b>: <b>{conf * 100:.0f}%</b> &nbsp;|&nbsp;
-                <b>Appliances Correlated</b>: {len(incident.get('entities', {}).get('devices', []))}
+                <b>Time Window</b>: {incident.get('start_time')} → {incident.get('end_time')} &nbsp;|&nbsp;
+                <b>Events</b>: {len(incident.get('observed_facts', []))} &nbsp;|&nbsp;
+                <b>Devices</b>: {len(incident.get('entities', {}).get('devices', []))} &nbsp;|&nbsp;
+                <b>Rules matched</b>: {len(links)}
             </div>
         </div>
         """,
@@ -113,18 +116,21 @@ def render_correlation():
             )
 
     with col_inferred:
-        st.markdown("##### 🧠 Inferred Relationships (Analytical Hypotheses)")
-        st.caption("Contextual hypotheses derived from entity overlap and temporal proximity (Not confirmed causation):")
-        inferred = incident.get("inferred_relationships", [])
+        st.markdown("##### 🧠 Inferred Relationships (Rules that matched)")
+        st.caption("Each rule is listed with the evidence that made it match. A match is not confirmed causation, "
+                   "and it carries no probability.")
+        inferred = links
         if inferred:
             for inf in inferred:
+                evidence = "".join(f"<li>{e}</li>" for e in inf.get("evidence", []))
                 st.markdown(
                     f"""
                     <div style="background-color: #F8FAFC; border: 1px dashed #0077B6; border-radius: 4px; padding: 12px; margin-bottom: 10px;">
                         <div style="display:flex; justify-content:space-between;">
                             <b>{inf.get('relationship_type')}</b>
-                            <span class="badge badge-purple">{inf.get('confidence') * 100:.0f}% Confidence</span>
+                            <span class="badge badge-purple">{len(inf.get('source_event_ids', []))} events</span>
                         </div>
+                        <ul style="font-size:0.8rem; color:#334155; margin:6px 0 0 0; padding-left:18px;">{evidence}</ul>
                         <div style="font-size:0.85rem; color:#0F172A; margin-top:4px;">
                             💡 <b>Hypothesis</b>: {inf.get('hypothesis')}
                         </div>
@@ -136,7 +142,7 @@ def render_correlation():
                     unsafe_allow_html=True
                 )
         else:
-            st.info("No cross-source causal patterns detected for this entity.")
+            st.info("No rule matched these events.")
 
     # Actionable Recommendations
     st.markdown("##### Triage & Remediation Recommendations")

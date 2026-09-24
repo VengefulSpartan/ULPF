@@ -19,19 +19,21 @@ class ObservedFact(BaseModel):
     fact_description: str
 
 class InferredRelationship(BaseModel):
+    """A correlation rule that held, with the evidence that made it hold. Deliberately no
+    confidence score: nothing measures one (see backend/services/correlation/engine.py)."""
     inference_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     source_event_ids: List[str]
-    relationship_type: str # e.g. TEMPORAL_PIVOT, CREDENTIAL_PIVOT, RECON_TO_EXPLOIT, LATERAL_MOVEMENT
-    confidence: float # 0.0 to 1.0 (e.g. 0.85)
+    relationship_type: str  # LOGIN_THEN_ACTIVITY, ALLOWED_THEN_ALERT, PORT_SWEEP
     time_delta_seconds: float
+    shared_entities: List[str] = Field(default_factory=list)
+    evidence: List[str] = Field(default_factory=list)
     hypothesis: str
     rationale: str
 
 class IncidentSummary(BaseModel):
     incident_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
-    severity: str # Critical, High, Medium, Low
-    confidence_score: float
+    severity: str  # the highest severity among the observed facts
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     start_time: str
     end_time: str
