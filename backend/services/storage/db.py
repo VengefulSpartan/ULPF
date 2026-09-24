@@ -178,7 +178,6 @@ class Database:
                 incident_id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
                 severity TEXT NOT NULL,
-                confidence_score REAL NOT NULL,
                 start_time TEXT NOT NULL,
                 end_time TEXT NOT NULL,
                 data_json TEXT NOT NULL,
@@ -325,6 +324,20 @@ class Database:
                     "UPDATE normalized_events SET parser_pack = COALESCE("
                     "json_extract(unmapped_json, '$.tracelog_parse.parser_pack'), "
                     "(SELECT format_detected FROM raw_logs WHERE raw_logs.id = normalized_events.raw_id))")
+
+            # Migration: incidents used to store a confidence_score that was a constant, never a
+            # measurement (backend/services/correlation/engine.py). Incidents are derived reports, so the
+            # column is dropped and the stored copies lose the made-up numbers too.
+            existing_inc = {row[1] for row in cursor.execute("PRAGMA table_info(incidents)")}
+            if "confidence_score" in existing_inc:
+                cursor.execute("ALTER TABLE incidents DROP COLUMN confidence_score")
+                for incident_id, data_json in cursor.execute("SELECT incident_id, data_json FROM incidents").fetchall():
+                    data = json.loads(data_json)
+                    data.pop("confidence_score", None)
+                    for rel in data.get("inferred_relationships") or []:
+                        rel.pop("confidence", None)
+                    cursor.execute("UPDATE incidents SET data_json = ? WHERE incident_id = ?",
+                                   (json.dumps(data), incident_id))
 
             # Indexes for the joins and filters every page makes: event -> raw line -> source, the
             # current-version filter, and the columns the explorer and dashboard group by.

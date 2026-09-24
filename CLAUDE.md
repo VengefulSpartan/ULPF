@@ -14,8 +14,11 @@ fresh machine, `docs/CONNECTORS.md` the inputs and outputs.
 **Never print a number the code did not measure.** Every figure on the dashboard comes from the
 database or the running server. If three events arrived and one was read by a vendor pack, the card
 says 33.3 %. A constant standing in for a measurement — an accuracy, a confidence, a throughput —
-is the one thing that would discredit everything else here. (`backend/services/correlation/engine.py`
-still has hardcoded confidence scores. That is a known defect, not a pattern to copy.)
+is the one thing that would discredit everything else here. (The correlation engine once showed
+constant "confidence" scores; they were removed, and a rule now reports the evidence that made it
+match instead. The parsers' `confidence` values are rule weights compared with a threshold, labelled
+"evidence score" in the UI; their accuracy is measured separately. Do not present either as a
+probability.)
 
 **A missing field beats a wrong field.** The generic parser fills a field only when there is
 evidence for what the field means *and* that its value is valid; two addresses with nothing saying
@@ -104,5 +107,4 @@ Ranked in `Claude outputs/TRACELOG-status-and-plan.md`. The short list: no API a
 CORS restriction; the tamper endpoint is open; Kafka commits offsets before the batch is stored; the
 Parquet sink's paths are not Security Lake's layout; Snort's CSV, JSON and full alert formats are
 unhandled; services that run on a firewall host (DHCP, IPsec, DNS, proxies) have no packs, which is
-also the natural place to add OCSF classes 4002, 4003 and 4004; the RCA page's confidence scores are
-constants.
+also the natural place to add OCSF classes 4002, 4003 and 4004.

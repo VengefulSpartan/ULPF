@@ -56,6 +56,13 @@ the overall confidence, and for each field its value, confidence and reason, plu
 it saw but did not fill and the values it rejected. A SIEM rule can require `verified: true`
 or a confidence threshold.
 
+"Confidence" here is an evidence score, not a measured probability: each kind of evidence has a
+fixed weight — for key names, a standard field name 0.95, a key that names the side and the kind
+0.85, a time, severity, user or threat key 0.8, a weak action key 0.75 — and a field is filled at
+0.7 or above. The dashboard labels it *evidence score* for that reason. What is measured is the result:
+85 correct, 18 missed, 0 wrong on the unseen-format corpus, and the real-log comparison in
+[`PUBLIC_SAMPLES.md`](PUBLIC_SAMPLES.md).
+
 Known packs are checked the same way. If a pack claims a line but produces impossible
 values, the device's format has drifted (a firmware update inserted a column, say). One odd
 value (an object name where an address should be) is dropped and reported in
