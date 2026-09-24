@@ -7,7 +7,7 @@ import pytest
 from backend.services.normalization.ocsf_normalizer import OCSFNormalizer
 from backend.services.parsing.dispatch import parse_log
 from backend.services.vendors.envelope import split_envelope
-from tests.test_vendor_packs import ASA_DENY
+from tests.test_vendor_packs import ASA_DENY, FORTI_TRAFFIC
 from tests.unseen_corpus import CORPUS, PAN_TRAFFIC_DRIFTED, score
 
 
@@ -78,11 +78,21 @@ def test_a_drifted_positional_format_is_not_passed_on_misaligned():
 
 
 def test_one_impossible_value_is_dropped_but_the_pack_is_kept():
-    line = ASA_DENY.replace("outside:203.0.113.77/40111", "outside:ATTACKER-HOST/40111")
+    line = FORTI_TRAFFIC.replace("srcip=10.1.1.20", "srcip=ATTACKER-HOST")
     fmt, parsed, ev = normalized(line)
-    assert fmt == "cisco_asa" and ev["dst_endpoint"]["ip"] == "10.0.0.20" and ev["src_endpoint"]["ip"] is None
+    assert fmt == "fortinet_fortigate" and ev["dst_endpoint"]["ip"] == "198.51.100.25"
+    assert ev["src_endpoint"]["ip"] is None
     assert parsed["vendor_fields"]["src_ip_rejected"] == "ATTACKER-HOST"
     assert "not an IP address" in parsed["tracelog_value_checks"][0]
+
+
+def test_an_asa_object_name_is_a_hostname_not_a_bad_address():
+    # the ASA writes a configured object name where the address would be ("names" command)
+    line = ASA_DENY.replace("outside:203.0.113.77/40111", "outside:ATTACKER-HOST/40111")
+    fmt, parsed, ev = normalized(line)
+    assert fmt == "cisco_asa" and ev["dst_endpoint"]["ip"] == "10.0.0.20"
+    assert ev["src_endpoint"]["ip"] is None and ev["src_endpoint"]["hostname"] == "ATTACKER-HOST"
+    assert ev["src_endpoint"]["port"] == 40111 and "tracelog_value_checks" not in parsed
 
 
 def test_known_vendor_packs_are_untouched():
