@@ -5,7 +5,7 @@
 [System design](docs/SYSTEM_DESIGN.md) · [End-to-end flow of one log line](docs/END_TO_END_FLOW.md) ·
 [Run it on a new machine](docs/RUNBOOK.md) · [Results on real logs](docs/PUBLIC_SAMPLES.md)
 
-![TRACELOG architecture](docs/diagrams/architecture.png)
+![TRACELOG architecture](docs/diagrams/architecture-poster.png)
 
 ---
 
