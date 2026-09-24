@@ -120,6 +120,21 @@ def test_blank_lines_are_not_events_but_everything_else_is(isolated_db):
     assert res["ingested"] == 2 and res["skipped_blank"] == 2
 
 
+def test_a_line_whose_parser_raises_is_still_archived_hashed_and_chained(isolated_db, monkeypatch):
+    import backend.services.ingestion.stream as stream
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("a parser bug")
+
+    monkeypatch.setattr(stream, "parse_log", broken)
+    raw = b"<14>Sep 20 14:00:15 fw1 app: src=10.0.0.1 dst=10.0.0.2"
+    stored = StreamIngestor().ingest([InboundRecord(raw=raw, transport="syslog-udp", input_name="t")])
+    assert len(stored) == 1
+    assert stored[0].normalized["class_uid"] == 0 and "a parser bug" in str(stored[0].normalized["unmapped"])
+    assert stored[0].raw_hash == hashlib.sha256(raw).hexdigest()
+    assert IntegrityLedger.verify_chain().is_valid
+
+
 def test_rows_written_before_the_rule_still_verify_and_tampering_is_still_caught(isolated_db):
     """A chain spanning both rules verifies; changing one stored byte breaks it either way."""
     StreamIngestor().ingest([InboundRecord(raw=LINES["latin-1 byte"], transport="syslog-udp", input_name="t")])
