@@ -382,8 +382,8 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 - **`run_app.py`**: Single-command Python launcher that starts both the FastAPI backend (`:8000`) and the Streamlit dashboard (`:8501`) concurrently.
 - **`requirements.txt`**: Consolidated, tested Python dependencies.
 - **`.env.example`**: Environment variable template for ports, database path, and optional LLM keys.
-- **`Dockerfile`**: Container build definition for production deployment.
-- **`docker-compose.yml`**: Compose specification running backend and frontend in isolated containers sharing a persistent data volume.
+- **`Dockerfile`**: Two-stage build: wheels are built with a compiler, the runtime stage has none, runs as an unprivileged `tracelog` user with the code read-only, one process per container, and a health check. **`.dockerignore`** keeps `.env`, databases, `.git`, venvs, tests and notes out of the image; `scripts/check_image.sh` builds the image and proves it.
+- **`docker-compose.yml`**: API and dashboard as two containers from one image, sharing a data volume, with a read-only root filesystem, all capabilities dropped and no privilege escalation.
 
 ---
 
@@ -693,13 +693,16 @@ To execute the comprehensive test suite:
 ```powershell
 python -m pytest -q
 ```
-**Expected Output**: every test passes (213 at the time of writing), including the connector tests that run real syslog sockets and mock Splunk, Elasticsearch, Loki, OTLP, Sentinel, Datadog, GELF and syslog/CEF/LEEF receivers.
+**Expected Output**: every test passes, including the connector tests that run real syslog sockets and mock Splunk, Elasticsearch, Loki, OTLP, Sentinel, Datadog, GELF and syslog/CEF/LEEF receivers.
 
 ### 6. Docker Deployment
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
+sh scripts/check_image.sh        # optional: proves no secret, database or compiler is in the image
 ```
-Access the dashboard at `http://localhost:8501` and the Swagger API at `http://localhost:8000/docs`. The backend container also publishes syslog on **514/udp and 514/tcp** (and 6514 for TLS), so devices can point at the Docker host's standard syslog port straight away. `config/` is mounted read-only, so connector changes need only `docker-compose restart ulpf-backend`.
+Access the dashboard at `http://localhost:8501` and the Swagger API at `http://localhost:8000/docs`. The backend container also publishes syslog on **514/udp and 514/tcp** (and 6514 for TLS), so devices can point at the Docker host's standard syslog port straight away. `config/` is mounted read-only, so connector changes need only `docker compose restart tracelog-backend`. The image runs one process: the API by default, the dashboard with `streamlit run frontend/app.py` as the command, which is what compose does. Secrets go in `.env` next to the compose file and reach the container as environment variables; `.dockerignore` keeps that file out of the image.
+
+**Air-gapped networks.** Nothing TRACELOG serves loads from the internet (Swagger UI ships in the image) and the dashboard sends no usage statistics. Build the image where there is internet, carry it across with `docker save` / `docker load`, and run it with no outbound access: [docs/AIRGAP.md](docs/AIRGAP.md).
 
 ---
 

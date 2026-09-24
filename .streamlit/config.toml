@@ -10,3 +10,12 @@ font = "sans serif"
 headless = true
 enableCORS = false
 enableXsrfProtection = false
+
+[browser]
+# Air-gapped networks (PS item j): the dashboard sends no usage statistics anywhere. Streamlit's
+# default is to send them from the viewer's browser; tests/test_airgap.py keeps this off.
+gatherUsageStats = false
+
+[client]
+# no Deploy button (it links to Streamlit's cloud) and no developer menu for people viewing the dashboard
+toolbarMode = "viewer"

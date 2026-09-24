@@ -231,8 +231,8 @@ def _export():
                        use_container_width=True)
     st.caption(f"Latest {len(ocsf)} events. For continuous export use a `file` or `parquet` output.")
     st.markdown(
-        f"API documentation: [Swagger UI](http://{settings.BACKEND_HOST}:{settings.BACKEND_PORT}/docs) · "
-        f"[ReDoc](http://{settings.BACKEND_HOST}:{settings.BACKEND_PORT}/redoc)"
+        f"API documentation: [Swagger UI](http://{settings.BACKEND_HOST}:{settings.BACKEND_PORT}/docs) "
+        "(served by TRACELOG itself, so it works without internet access)"
     )
 
 
