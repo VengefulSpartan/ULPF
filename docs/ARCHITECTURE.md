@@ -12,7 +12,13 @@ from the wire to the SIEM.
 
 ## The diagram
 
-Rendered for slides and print: [`diagrams/architecture.png`](diagrams/architecture.png),
+For slides: [`diagrams/architecture-poster.png`](diagrams/architecture-poster.png) (3840 × 2160,
+icons and panels; [SVG](diagrams/architecture-poster.svg)). The diagram below is the same system
+as a Mermaid flowchart that renders on GitHub.
+
+![TRACELOG architecture](diagrams/architecture-poster.png)
+
+Mermaid version rendered for print: [`diagrams/architecture.png`](diagrams/architecture.png),
 [`diagrams/architecture.svg`](diagrams/architecture.svg). Source:
 [`diagrams/architecture.mmd`](diagrams/architecture.mmd). The other diagrams in these documents are
 rendered next to it: [end-to-end sequence](diagrams/end-to-end-sequence.png),
