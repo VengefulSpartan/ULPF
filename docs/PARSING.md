@@ -42,6 +42,20 @@ files. It is archived as text like any other line. Windows Security events have 
 (`windows_security`), because the names alone do not say that a logon event's `IpAddress` is where
 the logon came from.
 
+**CSV and TSV files with a header row.** A CSV line alone does not say what its columns are; the
+file's first line often does. When an uploaded file, a submitted batch or a tailed file starts with
+a header, every line after it that has the same number of columns is read as (column name, value)
+pairs and goes through the same rules: `Source address` becomes the source only because its name
+says so and its value is an address, and `NAT Source IP` is skipped. It is read by name before any
+vendor pack, because the file's header says what the columns are where a positional pack could only
+assume it. A line counts as a header only if it has at least three distinct names, no cell holds a
+value (an address, a number, a time, `key: value`), no vendor pack claims it, and the next line has
+the same number of columns with at least one value; on the 251 real log files in
+[`PUBLIC_SAMPLES.md`](PUBLIC_SAMPLES.md), none of which is a CSV with a header, it took none. The
+header line is archived and chained like any other line, marked `csv_header_row`, and not counted
+as a new format. A stream (syslog, Kafka, HTTP) has no header, so nothing changes there. Code:
+`backend/services/parsing/csvheader.py`.
+
 Key names are split into words to find their meaning (`srcPort` → src port, `clientip` → client
 ip). A glued word is split only when every piece is a known word: accepting any remainder once
 read `device_ip` as d(estination) + evice + ip, and `sensor_ip` as a source address.
@@ -77,7 +91,7 @@ values (`inference.fingerprint`).
 
 | Structure | What decides the format |
 |---|---|
-| key=value, JSON, XML, CEF, LEEF | kind, delimiter, syslog app and key names |
+| key=value, JSON, XML, CEF, LEEF, CSV read by its header | kind, delimiter, syslog app and key (column) names |
 | delimited (CSV, TSV) | delimiter, number of columns, app |
 | free text | app and the tokens with values masked: `<IP>`, `<N>`, `<HOST>`, `<ACTION>`, `<PROTO>`, ... |
 
@@ -190,6 +204,8 @@ proposals marked for review, and scored on 100 new lines:
 
 - Direction in positional formats comes from a person, not from the data: TRACELOG proposes
   the order and flags it, and cannot know it.
+- A CSV header is known only where a file's first line is seen: uploads, batches and tailed files.
+  Re-parsing stored lines later (Parser Studio) reads them without it.
 - A free-text format that varies in more than one word per line splits into several formats;
   learning one of them still covers the others when the part it reads is the same.
 - A learned parser recognises lines by structure. Two different messages that share a

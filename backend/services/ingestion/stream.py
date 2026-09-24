@@ -57,7 +57,7 @@ class InboundRecord:
     peer_ip: Optional[str] = None
     peer_port: Optional[int] = None
     received_at: str = field(default_factory=utcnow_iso)
-    hints: Dict[str, str] = field(default_factory=dict)   # source_name, vendor, product, hostname
+    hints: Dict[str, Any] = field(default_factory=dict)   # source_name, vendor, product, hostname, csv_header
 
 
 @dataclass
@@ -221,8 +221,8 @@ def store_event(conn, ev, event_id: str, seq: int, raw_id: str, raw_hash: str,
 def note_format(conn, parsed: Dict[str, Any]) -> Optional[str]:
     """The registry format id for a line handled by the generic or a learned parser (None for vendor packs)."""
     tp = parsed.get("tracelog_parse")
-    if not tp or not tp.get("format_id") or tp.get("standard"):
-        return None  # vendor packs and standard formats (CEF, LEEF) are not new formats
+    if not tp or not tp.get("format_id") or tp.get("standard") or tp.get("csv_header_row"):
+        return None  # vendor packs, standard formats (CEF, LEEF) and CSV header rows are not new formats
     try:
         tp["format_id"] = format_registry.resolve(conn, tp)
     except Exception:
@@ -261,7 +261,7 @@ class StreamIngestor:
             if not text.strip():
                 continue
             try:
-                fmt, parsed = parse_log(text)
+                fmt, parsed = parse_log(text, rec.hints.get("csv_header"), bool(rec.hints.get("csv_header_row")))
             except Exception as exc:  # never lose a line because a parser failed
                 logger.exception("parse failed")
                 fmt, parsed = "parse_error", {"_format": "parse_error", "parse_error": str(exc)}
