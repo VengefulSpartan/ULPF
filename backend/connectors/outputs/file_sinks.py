@@ -20,8 +20,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from backend.services.ml import rows as ml_rows
+
 from .base import DeliveryError, Sink
-from .formats import ts_iso
 
 
 def _event_dt(e: Dict[str, Any]) -> datetime:
@@ -59,9 +60,9 @@ class FileSink(Sink):
 
 class ParquetSink(Sink):
     type_name = "parquet"
-    COLUMNS = ("time", "event_time", "class_uid", "class_name", "activity_name", "severity_id", "severity",
-               "src_ip", "src_port", "dst_ip", "dst_port", "protocol", "action", "user_name", "finding_title",
-               "vendor", "product", "event_uid", "ocsf")
+    # the analytics data contract (backend/services/ml/rows.py, docs/ML_DATA.md): typed columns, a
+    # null wherever the device did not say, and each row's parser, verification and raw-line hash
+    COLUMNS = tuple(ml_rows.NAMES)
     LAYOUTS = ("hive", "security_lake")
     # Security Lake's ceilings, as sizes pyarrow understands: pages under 1 MB uncompressed, and a
     # row-group row count that keeps a group far below the 256 MB compressed limit at our row width.
@@ -114,18 +115,7 @@ class ParquetSink(Sink):
 
     @staticmethod
     def _row(e: Dict[str, Any]) -> Dict[str, Any]:
-        src, dst = e.get("src_endpoint") or {}, e.get("dst_endpoint") or {}
-        prod = (e.get("metadata") or {}).get("product") or {}
-        return {
-            "time": e.get("time"), "event_time": ts_iso(e), "class_uid": e.get("class_uid"),
-            "class_name": e.get("class_name"), "activity_name": e.get("activity_name"),
-            "severity_id": e.get("severity_id"), "severity": e.get("severity"), "src_ip": src.get("ip"),
-            "src_port": src.get("port"), "dst_ip": dst.get("ip"), "dst_port": dst.get("port"),
-            "protocol": (e.get("connection_info") or {}).get("protocol_name"), "action": e.get("action"),
-            "user_name": (e.get("user") or {}).get("name"), "finding_title": (e.get("finding_info") or {}).get("title"),
-            "vendor": prod.get("vendor_name"), "product": prod.get("name"),
-            "event_uid": (e.get("metadata") or {}).get("uid"), "ocsf": json.dumps(e, default=str),
-        }
+        return ml_rows.typed(ml_rows.ml_row(e))
 
     def send(self, batch):
         try:
@@ -146,6 +136,7 @@ class ParquetSink(Sink):
         for (directory, class_uid), rows in parts.items():
             directory.mkdir(parents=True, exist_ok=True)
             rows.sort(key=lambda r: (r["time"] or 0))   # ordered by time: cheaper queries, and AWS asks for it
-            pq.write_table(pa.Table.from_pylist(rows), directory / self.file_name(class_uid),
+            pq.write_table(pa.Table.from_pylist(rows, schema=ml_rows.arrow_schema()),
+                           directory / self.file_name(class_uid),
                            compression=self.s["compression"], data_page_size=self.DATA_PAGE_SIZE,
                            row_group_size=self.ROW_GROUP_ROWS)

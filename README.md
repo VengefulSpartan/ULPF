@@ -3,7 +3,8 @@
 
 **Start here:** [Architecture, two pages with the diagram](docs/ARCHITECTURE.md) ·
 [System design](docs/SYSTEM_DESIGN.md) · [End-to-end flow of one log line](docs/END_TO_END_FLOW.md) ·
-[Run it on a new machine](docs/RUNBOOK.md) · [Results on real logs](docs/PUBLIC_SAMPLES.md)
+[Run it on a new machine](docs/RUNBOOK.md) · [Results on real logs](docs/PUBLIC_SAMPLES.md) ·
+[Analytics and ML](docs/ML_DATA.md)
 
 ![TRACELOG architecture](docs/diagrams/architecture-poster.png)
 
@@ -34,6 +35,7 @@
 10. [Log Formats TRACELOG Has Never Seen: Detect, Learn, Approve, Re-parse](#10-log-formats-tracelog-has-never-seen)
 11. [Measured Performance](#11-measured-performance)
 12. [Tested on Real, Third-Party Logs](#12-tested-on-real-third-party-logs)
+13. [AI/ML-Ready Analytics](#13-aiml-ready-analytics)
 
 ---
 
@@ -380,6 +382,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 - **`tests/test_parser_generation.py`**: Tests candidate parser synthesis, validation testing against sample batches, and error scoring.
 - **`tests/test_correlation_rca.py`**: End-to-end test verifying multi-device correlation, temporal ordering, and fact-vs-inference classification.
 - **`tests/test_api_endpoints.py`**: Integration tests using FastAPI `TestClient` covering all REST endpoints.
+- **`tests/test_ml.py`**: The analytics row (nulls, types, lineage), window features that never see a later window, the baseline's flags and minimums, and a synthetic day end to end: attacks become chained, valid Detection Findings whose evidence resolves to archived lines, written once.
 
 ---
 
@@ -389,6 +392,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 - **`requirements.txt`**: Consolidated, tested Python dependencies.
 - **`.env.example`**: Environment variable template for ports, database path, and optional LLM keys.
 - **`Dockerfile`**: Two-stage build: wheels are built with a compiler, the runtime stage has none, runs as an unprivileged `tracelog` user with the code read-only, one process per container, and a health check. **`.dockerignore`** keeps `.env`, databases, `.git`, venvs, tests and notes out of the image; `scripts/check_image.sh` builds the image and proves it.
+- **`scripts/export_features.py`**, **`scripts/run_baseline.py`**, **`scripts/evaluate_baseline.py`**: export window features, run the baseline detector once, and evaluate it on synthetic days with injected attacks (`scripts/synthetic_network.py`); see [`docs/ML_DATA.md`](docs/ML_DATA.md).
 - **`docker-compose.yml`**: API and dashboard as two containers from one image, sharing a data volume, with a read-only root filesystem, all capabilities dropped and no privilege escalation.
 
 ---
@@ -655,6 +659,9 @@ All endpoints return standard JSON responses and are fully documented interactiv
 | `POST` | `/services/collector/raw` | Splunk HEC raw receiver, one log per line | Raw lines, `host`, `sourcetype` | `{"text": "Success", "code": 0}` |
 | `POST` | `/v1/logs` | OpenTelemetry OTLP/HTTP logs receiver (JSON, gzip accepted) | `ExportLogsServiceRequest` JSON | `{"partialSuccess": {}}` |
 | `POST` | `/api/ingest/stream` | Lines, NDJSON or a JSON array; `message_field` unwraps Logstash/Beats events | `source`, `vendor`, `product`, `message_field` | `{"accepted": N}` |
+| `GET` | `/api/ml/contract` | The analytics row's columns, types and meanings | None | `{"columns", "rules"}` |
+| `GET` | `/api/ml/features` | Per-entity 5-minute window features | `entity_type`, `hours`, `window_minutes`, `format` | CSV attachment or JSON |
+| `POST` | `/api/ml/baseline/run` | Scores recent windows; writes flags as Detection Findings | `hours`, `lookback_hours`, `until`, `dry_run` | `{"windows_scored", "flags", "findings_written", "findings"}` |
 
 ---
 
@@ -836,7 +843,7 @@ were, `tests/test_throughput.py` proves it, and the unseen-format score is uncha
 18 missed, **0 wrong**.
 
 To measure it on your own machine, and to set the project up on a machine that has never seen it,
-follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 287 passed), run, and the
+follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 302 passed), run, and the
 three benchmark commands including `-w N` for N ingest shards, each with its own hash chain.
 
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately
@@ -876,3 +883,29 @@ Scoring real logs found a real defect: the ASA pack read a Teardown's first addr
 so every outbound DNS lookup's teardown came *from* port 53. It now joins each Teardown to its Built
 message by device, connection id and both ends, and leaves source and destination empty when the
 Built message was not seen, rather than guess.
+
+---
+
+## 13. AI/ML-Ready Analytics
+
+Four parts, all in [`docs/ML_DATA.md`](docs/ML_DATA.md):
+
+- **A data contract.** The Parquet output writes one typed row per event
+  (`backend/services/ml/rows.py`, `GET /api/ml/contract`). A null means the device did not say;
+  each row says which parser read it, whether its fields were verified or inferred, whether its time
+  is the device's, and its chain position and raw-line hash.
+- **Window features.** Per source address, user and device, for each 5-minute window: events,
+  denies, distinct destinations and ports, new destinations, bytes, failed logins, findings. Each row
+  comes from its own window and earlier ones only, so the export can be split by time for training
+  without leakage (`scripts/export_features.py`, `GET /api/ml/features`).
+- **A baseline detector.** Each window is compared with the entity's own last 24 hours (or its
+  peers' when it is new) using a robust z-score and a minimum increase. Each flag is written through
+  the same writer as every log line, as an OCSF Detection Finding that lists the events it came
+  from, so it is archived, chained and delivered to the SIEMs, and never written twice
+  (`scripts/run_baseline.py`, `POST /api/ml/baseline/run`, or `BASELINE_EVERY_MINUTES=5`).
+  It gives no confidence or probability: a flag says what was measured and what it was compared with.
+- **An evaluation.** `python scripts/evaluate_baseline.py` runs synthetic days with eight attacks
+  injected at known times through the real pipeline. On three seeds it caught the six attacks a
+  per-window baseline can see every time, missed the two built to stay under it, and flagged one
+  benign nightly backup a day ([`docs/ML_EVALUATION.md`](docs/ML_EVALUATION.md)). These are
+  synthetic days; how often it flags benign traffic on a real network is not known until it runs on one.

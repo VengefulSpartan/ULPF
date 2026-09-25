@@ -22,6 +22,8 @@ from backend.api.connectors import router as connectors_router
 from backend.api.audit import router as audit_router
 from backend.api.formats import router as formats_router
 from backend.api.receivers import router as receivers_router
+from backend.api.ml import router as ml_router
+from backend.services.ml import baseline
 
 
 @asynccontextmanager
@@ -29,7 +31,11 @@ async def lifespan(_app: FastAPI):
     # Start syslog/file/Kafka inputs and output connectors from config/tracelog.yaml
     # (or the file named by TRACELOG_CONFIG). HTTP receivers are always mounted.
     await engine.start()
+    detector = baseline.Schedule(settings.BASELINE_EVERY_MINUTES).start() if settings.BASELINE_EVERY_MINUTES > 0 \
+        else None
     yield
+    if detector:
+        detector.stop()
     await engine.stop()
 
 
@@ -82,6 +88,7 @@ app.include_router(export_router, prefix=settings.API_PREFIX)
 app.include_router(connectors_router, prefix=settings.API_PREFIX)
 app.include_router(audit_router, prefix=settings.API_PREFIX)
 app.include_router(formats_router, prefix=settings.API_PREFIX)
+app.include_router(ml_router, prefix=settings.API_PREFIX)
 app.include_router(receivers_router)
 
 @app.get("/health")

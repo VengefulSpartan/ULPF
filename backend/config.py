@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # (scripts/benchmark.py measures both). Turn it off for a pure forwarder that is never searched.
     SEARCH_INDEX: bool = True
 
+    # Run the baseline detector (backend/services/ml/baseline.py) as each window of this many minutes
+    # closes, writing its flags as Detection Findings. 0 leaves it off; POST /api/ml/baseline/run and
+    # scripts/run_baseline.py run it on demand either way.
+    BASELINE_EVERY_MINUTES: int = 0
+
     # Server settings
     BACKEND_HOST: str = "127.0.0.1"
     BACKEND_PORT: int = 8000

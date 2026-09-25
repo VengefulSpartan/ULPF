@@ -68,7 +68,7 @@ flowchart TB
     direction LR
     DASH["Streamlit dashboard :8501"]
     API["FastAPI :8000<br/>REST · Swagger UI served locally"]
-    SVC["Chain verification and tamper detection<br/>Reconciliation · audit report PDF / JSON<br/>Parser Studio: learn → review → approve → re-parse<br/>Correlation rules with their evidence"]
+    SVC["Chain verification and tamper detection<br/>Reconciliation · audit report PDF / JSON<br/>Parser Studio: learn → review → approve → re-parse<br/>Correlation rules with their evidence<br/>Baseline detector: 5-minute features → Detection Findings"]
     DASH --> API --> SVC
   end
 

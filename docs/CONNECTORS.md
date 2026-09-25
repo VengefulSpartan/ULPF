@@ -553,7 +553,7 @@ Output type: `webhook`.
 Output type: `file / parquet / kafka`.
 
 1. NDJSON files work with no other software and can be moved on removable media.
-2. Parquet in the default layout is partitioned by class_uid and event_day for Athena, Trino, Spark and DuckDB (needs pyarrow).
+2. Parquet in the default layout is partitioned by class_uid and event_day for Athena, Trino, Spark and DuckDB (needs pyarrow). Every file has the same typed columns, with each event's parser, whether its fields were verified, and its raw-line hash (docs/ML_DATA.md).
 3. layout: security_lake writes the object layout Amazon Security Lake requires of a custom source: ext/<source>/region=<region>/accountId=<id>/eventDay=<YYYYMMDD>/, one OCSF class per object, zstd, rows ordered by time. Set batch_size and flush_seconds on the output to land in the 5-minute to 1-day file size AWS asks for.
 4. Check the tree before you upload it: `python scripts/check_security_lake_layout.py data/security-lake`. TRACELOG writes files, not S3 objects, so the upload is `aws s3 sync data/security-lake s3://<bucket>/` and the output still works air-gapped.
 5. Security Lake reads OCSF 1.3 and earlier; TRACELOG emits 1.1.0, and the output refuses to write anything newer rather than fill a bucket the lake will not read.
