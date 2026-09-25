@@ -21,7 +21,7 @@ outcomes, and where TRACELOG meets each:
 | (e) | Plug-and-play onboarding of new sources | Devices register themselves by hostname; unknown formats are detected and a parser is learned from their samples (§3.3, §3.8) |
 | (f) | Unified visibility | One OCSF shape for every source; a dashboard whose numbers come from the database (§3.10) |
 | (g) | SIEM and data lake integration | 15 output types with delivery guarantees, Amazon Security Lake layout for Parquet (§3.7) |
-| (h) | AI/ML-ready analytics | Typed, numeric, time-ordered OCSF in Parquet; nothing yet demonstrates it (§9) |
+| (h) | AI/ML-ready analytics | A typed Parquet row per event that says where each value came from; per-entity 5-minute features; a baseline detector whose flags are written back as chained Detection Findings; evaluated on synthetic days with injected attacks (§3.11, [ML_DATA.md](ML_DATA.md)) |
 | (i) | Reduced parser development effort | Evidence-based generic parser, then learning a parser from samples instead of writing one (§3.4, §3.8) |
 | (j) | Deployable in an air-gapped network | No outbound connections except configured outputs; checked with the network cut off ([AIRGAP.md](AIRGAP.md)) |
 | (k) | Packaged in a container | Two-stage image, non-root, one process per container, read-only compose (§8) |
@@ -297,13 +297,32 @@ evidence does not prove.
 ### 3.10 API and dashboard
 
 The API (`backend/main.py`, `backend/api/`) serves REST endpoints for sources, ingestion, events,
-integrity, the audit, connectors, formats and parsers, correlation, analytics and export, the HTTP
+integrity, the audit, connectors, formats and parsers, correlation, analytics, ML features and the
+baseline detector, export, the HTTP
 receivers, and Swagger UI from files in the image. The dashboard (`frontend/`, Streamlit) has
 pages for the overview, sources and onboarding, Parser Studio, the processing pipeline, the log
 explorer, integrity and lineage, correlation, the OCSF schema, connectors (outputs, dead letters,
 reconciliation and audit) and settings. It calls the API and falls back to calling the same
 functions in-process when the API is not reachable. Every figure it shows is read from the database
 or the running server; `tests/test_dashboard_truth.py` checks that.
+
+### 3.11 Analytics and ML
+
+`backend/services/ml/` has three parts, described in full in [ML_DATA.md](ML_DATA.md).
+`rows.py` is the data contract: one flat, typed row per OCSF event, which the Parquet output writes
+and the features are built from. A null means the device did not say; every row carries the parser
+that read it, whether its fields were verified or inferred, whether its time is the device's, and
+its chain position and raw hash. `features.py` computes per source address, user and device, for
+each 5-minute window, counts such as denied connections, distinct destination ports, bytes sent and
+failed logins, each from its own window and earlier ones only, so a row is the same computed live
+or from the archive. `baseline.py` compares each window with the entity's own last 24 hours, or its
+peers' when it has too little history, flags values at least 3.5 robust standard deviations and a
+fixed minimum above the median, and writes each flag as one JSON line through the writer. A small
+pack reads that line into a Detection Finding, so a flag is archived, chained, delivered to the
+outputs and lists the events it came from, and the same flag is never written twice. There is no
+probability anywhere in it. On synthetic days ([ML_EVALUATION.md](ML_EVALUATION.md)) it caught the six
+attacks a per-window baseline can see, missed the two built to stay under it, and flagged one benign
+nightly backup a day.
 
 ## 4. Data model
 
@@ -464,8 +483,9 @@ audit and are the next security work.
 - **Kafka offsets are committed before the batch is stored.** A crash between the two loses what was
   in memory. The fix is to commit after the writer's transaction.
 - **No sharded runtime.** Only the benchmark runs several writers.
-- **AI/ML readiness is a property of the data, not yet a demonstration.** The events are typed,
-  numeric and time-ordered in Parquet, but no feature export or example model ships.
+- **The baseline sees one 5-minute window at a time, with 24 hours of memory.** Attacks spread thin
+  over hours, daily jobs and a device going quiet are outside what it can flag, and it has only been
+  evaluated on synthetic traffic ([ML_DATA.md](ML_DATA.md), §6).
 - **Four OCSF classes.** HTTP, DNS and DHCP activity (4002, 4003, 4004) land as Base or Network
   events; services that run on a firewall host have no packs yet.
 - **Coverage gaps seen on real logs.** Cisco FTD connection events (430002/430003), WatchGuard,

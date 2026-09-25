@@ -93,7 +93,7 @@ flowchart TB
     direction LR
     DASH["Streamlit dashboard :8501"]
     API["FastAPI :8000<br/>REST · Swagger UI served locally"]
-    SVC["Chain verification and tamper detection<br/>Reconciliation · audit report PDF / JSON<br/>Parser Studio: learn → review → approve → re-parse<br/>Correlation rules with their evidence"]
+    SVC["Chain verification and tamper detection<br/>Reconciliation · audit report PDF / JSON<br/>Parser Studio: learn → review → approve → re-parse<br/>Correlation rules with their evidence<br/>Baseline detector: 5-minute features → Detection Findings"]
     DASH --> API --> SVC
   end
 
@@ -128,6 +128,7 @@ flowchart TB
 | Reconciliation and audit | Proves every stored line is accounted for at every output (owed = delivered + filtered + dead-lettered + in flight; unaccounted must be 0) and issues a PDF/JSON report with a fingerprint | `backend/services/integrity/reconcile.py`, `audit_pdf.py` |
 | Parser Studio | Groups lines no parser knows into formats, learns a parser from their samples, tests it on held-out lines, requires a person to approve it, then re-parses history as chained revisions | `backend/services/parsing/formats.py`, `backend/services/parser_generation/` |
 | Correlation | Links events from different devices by shared address and time, and shows the evidence for each link; no confidence scores | `backend/services/correlation/engine.py` |
+| Analytics and ML | A typed Parquet row per event that says where each value came from; per-entity 5-minute features, each from its own and earlier windows; a baseline detector that compares each window with the entity's history and writes its flags back through the writer as Detection Findings ([ML_DATA.md](ML_DATA.md)) | `backend/services/ml/`, `backend/api/ml.py` |
 | API and dashboard | FastAPI (REST, receivers, Swagger UI served from the image) and a Streamlit dashboard whose every number is read from the database | `backend/main.py`, `backend/api/`, `frontend/` |
 
 ## The rules it is built on
@@ -160,4 +161,5 @@ telemetry is off ([AIRGAP.md](AIRGAP.md)). Outputs connect only to the destinati
 | Against Elastic's parsers | 13,633 address/port fields: 8,693 agree, 4,229 left empty, 711 differ — all but 3 explained by evidence in the data | same, report in [PUBLIC_SAMPLES.md](PUBLIC_SAMPLES.md) |
 | Formats with no parser | 85 correct, 18 missed, 0 wrong; learned parsers then fill 2,200 of 2,200 fields on new lines | `python scripts/evaluate_unseen_formats.py --learned` |
 | Throughput | 2,300–2,700 events/s per process on 2 vCPUs, archive, parse, OCSF and chain included; 4,866 with two shards | `python scripts/benchmark.py -n 20000 -b 1000 [-w 2]` |
-| Tests | 287 passing | `pytest -q` |
+| Baseline detector, synthetic days | 3 seeds, 8 injected attacks each: the 6 a per-window baseline can see caught every time, the 2 built to stay under it missed; 1 false flag a day, a nightly backup; every finding valid OCSF and chained | `python scripts/evaluate_baseline.py`, report in [ML_EVALUATION.md](ML_EVALUATION.md) |
+| Tests | 302 passing | `pytest -q` |

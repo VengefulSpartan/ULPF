@@ -496,7 +496,8 @@ DESTINATIONS: List[Dict[str, object]] = [
         "steps": [
             "NDJSON files work with no other software and can be moved on removable media.",
             "Parquet in the default layout is partitioned by class_uid and event_day for Athena, Trino, "
-            "Spark and DuckDB (needs pyarrow).",
+            "Spark and DuckDB (needs pyarrow). Every file has the same typed columns, with each event's parser, "
+            "whether its fields were verified, and its raw-line hash (docs/ML_DATA.md).",
             "layout: security_lake writes the object layout Amazon Security Lake requires of a custom "
             "source: ext/<source>/region=<region>/accountId=<id>/eventDay=<YYYYMMDD>/, one OCSF class per "
             "object, zstd, rows ordered by time. Set batch_size and flush_seconds on the output to land "

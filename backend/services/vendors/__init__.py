@@ -9,7 +9,7 @@ fall through to the generic CEF / LEEF / syslog / key=value / JSON parsers.
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import checkpoint, cisco, fortinet, juniper, paloalto, pfsense, sonicwall, sophos, windows
+from . import checkpoint, cisco, fortinet, juniper, paloalto, pfsense, sonicwall, sophos, tracelog, windows
 from .envelope import Envelope, split_envelope
 from .ids import Snort, Suricata, Zeek
 
@@ -17,6 +17,7 @@ logger = logging.getLogger("tracelog.vendors")
 
 PACKS: List[Any] = [
     paloalto, fortinet, cisco, checkpoint, juniper, sophos, sonicwall, pfsense, Suricata, Zeek, Snort, windows,
+    tracelog,   # TRACELOG's own baseline detector findings (backend/services/ml/baseline.py), not a device
 ]
 
 # Shown in the UI and README compatibility matrix.

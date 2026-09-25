@@ -55,7 +55,7 @@ the standard library and everything still works, about 5 % slower.
 pytest -q
 ```
 
-**Expect `287 passed`.** If tests fail, stop here — a number from a broken build is worse than no
+**Expect `302 passed`.** If tests fail, stop here — a number from a broken build is worse than no
 number.
 
 ```bash
@@ -84,6 +84,11 @@ python scripts/send_sample_attack.py --host 127.0.0.1 --port 5514
 
 Events appear live in the Explorer. (Those lines are samples, clearly labelled as such, not
 captured traffic.)
+
+To have the baseline detector score each 5-minute window as it closes and write its flags as
+Detection Findings, start with `BASELINE_EVERY_MINUTES=5 python run_app.py` (or set it in `.env`).
+`python scripts/evaluate_baseline.py` shows what it catches on synthetic days, in about two minutes
+([ML_DATA.md](ML_DATA.md)).
 
 With Docker instead of Python:
 

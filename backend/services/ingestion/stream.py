@@ -42,6 +42,7 @@ _CATEGORY_BY_PACK = {
     "paloalto_panos": "firewall", "fortinet_fortigate": "firewall", "cisco_asa": "firewall",
     "checkpoint_log_exporter": "firewall", "juniper_srx": "firewall", "sophos_firewall": "firewall",
     "sonicwall_sonicos": "firewall", "pfsense_filterlog": "firewall",
+    "tracelog_baseline": "analytics",   # TRACELOG's own baseline detector (backend/services/ml/baseline.py)
 }
 
 
