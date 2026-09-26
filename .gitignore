@@ -37,3 +37,6 @@ ui/dist/
 
 # Real third-party sample logs, fetched by scripts/evaluate_public_samples.py (their owners' terms; never committed)
 data/public_samples/
+
+# scripts/run_all_checks.py writes one folder per run here
+results/
