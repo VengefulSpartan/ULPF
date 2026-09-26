@@ -1,92 +1,76 @@
-# TRACELOG against PS 26156 — requirement by requirement, with proof
+# TRACELOG against PS 26156 — status, requirement by requirement
 
-Re-checked on 24 September 2026 against `main` at `4173830` (281 tests passing). Every verdict rests
-on something run today: a probe against a throwaway database, a test, a measured number, or the
-new real-log run. The Kafka offset fix and the pfSense service packs (OCSF 4002/4003/4004) are
-already planned and are not repeated in the gap lists.
+Checked on 25 September 2026 against `main` at `bda4551` (302 tests passing). Every verdict rests on
+something run for this check: a probe against a throwaway database, a test, a measured number, or
+the real-log run. Nothing here is carried over from an earlier audit without being re-run.
 
-Verdicts: **Proven** (evidence a judge can rerun), **Partial** (works, with a demonstrated hole),
-**Not proven** (nothing in the project shows it).
+Verdicts: **Met** (evidence a judge can rerun), **Partial** (works, with a named hole), **Not met**
+(nothing in the project does it yet).
 
-## What changed since the first audit (df3bb3b → 4173830)
+## The short answer
 
-| Was | Now | Evidence |
-|---|---|---|
-| (a) Lossless — Partial, defect proven | **Proven** | Stream: bytes reproducible and hash proves them for CRLF, Latin-1, invalid UTF-8 and padded lines (4/4). API keeps whitespace. Upload keeps `café`. |
-| XML — not parsed | **Proven** | Windows 4625 → Authentication, user and source address; generic device XML → both addresses. |
-| Tested only on lines we wrote | **Proven on real logs** | 17,768 third-party lines from 43 sources: 0 crashes, 0 OCSF-invalid, 17,768/17,768 archived and chained, chain verified (`docs/PUBLIC_SAMPLES.md`). |
-| Cisco ASA teardown direction | **Fixed** | Real logs exposed it: outbound teardowns came *from* port 53. Now joined to the Built message. |
-| Source code not pushed | **Pushed** | `origin` = github.com/VengefulSpartan/ULPF, at `8438e93`. The seven newest commits are not pushed yet. |
-| (f) Correlation showed constant confidences | **Removed** | No confidence number anywhere; each relationship lists the evidence that made its rule hold (shared address, seconds apart, ports tried). The rules now check what they claimed: a login must have succeeded, an alert must be on the same address pair. |
-| (j) Air-gap — Partial | **Proven** | Both servers in a network namespace with no route out, pages loaded in Chromium: 0 requests leave the machine (before: 3 — Swagger UI from a CDN, Streamlit telemetry); `/docs` renders 54 endpoints offline (before: blank). `docs/AIRGAP.md`. |
-| (k) Container — Partial | **Fixed in the build files** | `.dockerignore` (planted `.env`, key, venv, notes and the database all stay out of the build context), non-root user, no compiler, one process per container, health check, read-only compose. The image itself was not built in my sandbox (Docker Hub blocked there): run `sh scripts/check_image.sh` once on your laptop. |
-| CSV with a header row — not used | **Proven** | Uploads, batches and tailed files: rows read by column name through the evidence rules; 0 of 251 real log files mistaken for a header. |
-| FortiGate failed logins reported as successful | **Fixed** | The pack ignored `status=failure`; found while testing correlation. |
+Not all of it. Of the eleven expected outcomes, ten are met with proof and the container is met in
+its build files but has not been built once end to end. AI/ML-ready (h), the one that was not met,
+is now met on synthetic data; what it still lacks is a run on a real network's logs. Outside the
+eleven, **the framework's own security is not met**, and scale, the blockchain theme, compliance
+retention and device coverage are partial. Three deliverables are **missing or out of date**: the
+five-slide deck, the demo video and a LICENSE, and the architecture document still needs a two-page
+PDF.
 
 ## Expected solutions (a)–(k)
 
-| # | The PS asks | Verdict | Proof | What is lacking |
+| # | The PS asks | Verdict | Proof, as run for this check | What is still missing |
 |---|---|---|---|---|
-| a | Preserve complete raw event data | **Proven** | Probe above; `tests/test_lossless.py`; `docs/adr/0002-raw-preservation.md`. | Whitespace inside HEC JSON envelopes (documented). |
-| b | Extract source-specific attributes | **Proven**, coverage gaps | 12 vendor packs + CEF/LEEF. Real logs: 3,156 of 7,768 perimeter lines read by a pack, 0 crashes. | Products with many lines and no pack, where fields come out empty: **WatchGuard Firebox** (637 lines, 980 fields empty), **Cisco FTD connection events 430002/430003** (172 address fields empty), Arista NGFW (270), Squid (209), Barracuda WAF (152), Cisco IOS (87). Probe: Cisco IOS ACL, ModSecurity, Squid → no addresses. |
-| c | Normalize into a common taxonomy | **Proven** | 0 OCSF-invalid on 17,768 real lines; ADR 0001. | Four classes; WAF/proxy/DNS land as Base Event. |
-| d | Traceability normalized ↔ original | **Proven** | 5/5 exported events resolve to their raw line, SHA-256 matches, chain record present. | Chain unsigned and not anchored outside the database. |
-| e | Plug-and-play onboarding | **Proven** | Auto-registration, setup guides, Parser Studio learn → approve without restart. | Outputs still need YAML + restart (minor). |
-| f | Unified visibility | **Proven** | Every dashboard number measured from the database; correlation reports evidence, not scores. | Correlation rules are few (login then activity, allowed then alert, port sweep). |
-| g | SIEM and data lake integration | **Proven** | 15 outputs, Security Lake layout + checker, dead letters, delivery ledger, reconciliation. | Kafka offsets committed before the batch is stored (planned). |
-| h | AI/ML-ready analytics | **Not proven** | Schema is ML-friendly. | No feature export, no example, no baseline model. |
-| i | Reduced parser effort | **Proven** | Unseen formats 85 correct, 18 missed, **0 wrong**; learned parsers 2,200/2,200. | — |
-| j | Air-gapped deployment | **Proven** | Offline check above; `tests/test_airgap.py`; offline install by `docker save`/`load` or a wheelhouse in `docs/AIRGAP.md`. | — |
-| k | Containerised | **Proven in files, image to be built once** | `.dockerignore`, two-stage Dockerfile, non-root, health check, hardened compose; `tests/test_container.py`. | Run `sh scripts/check_image.sh` on a machine with Docker to confirm the built image. |
+| a | Preserve complete raw event data | **Met** | Stream: CRLF, Latin-1, invalid UTF-8 and padded lines all reproducible byte for byte and proven by the stored SHA-256 (4/4). API keeps whitespace. Upload keeps `café`. A line whose parser crashes is still archived and chained (`tests/test_lossless.py`). | — |
+| b | Extract source-specific attributes | **Met**, coverage gaps | 12 vendor packs plus CEF/LEEF; the device's own field names kept. Real logs: 3,156 of 7,768 perimeter lines read by a pack, 0 crashes. | Weak on real logs: Cisco FTD 430002/430003, WatchGuard, Cisco IOS, ModSecurity, Squid (probe: IOS ACL, ModSecurity, Squid give no addresses). |
+| c | Normalise into a common taxonomy | **Met** | OCSF 1.1.0; 0 invalid events on 17,768 real lines; version decision in ADR 0001. | Four classes only; HTTP/DNS/DHCP activity lands as Base or Network events. |
+| d | Traceability normalised ↔ original | **Met** | 5/5 exported events resolve to their raw line, hash matches, chain record present. | Chain not signed or anchored outside the database (see theme). |
+| e | Plug-and-play onboarding | **Met** | Devices register themselves by hostname; unknown formats detected, learned, approved and live within 5 s without a restart. | Parser Studio's "Generate & Test" tab stores parsers the pipeline never applies — hide or relabel it before a demo. |
+| f | Unified visibility | **Met** | One OCSF shape for every source; every dashboard number read from the database; correlation shows evidence, no invented scores (no constants found in `correlation/`). | Three correlation rules only. |
+| g | SIEM and data lake integration | **Met** | 15 output types tested against mock servers; dead letters with automatic replay; delivery ledger and reconciliation; Security Lake layout. | Kafka input commits offsets when records reach memory, before they are stored. |
+| h | AI/ML-ready analytics | **Met**, on synthetic data | A typed Parquet row per event: null where the device did not say, which parser read it, verified or inferred, raw-line hash. Per-entity 5-minute features that never see a later window (tested). A baseline detector whose flags become OCSF Detection Findings in the hash chain. Synthetic days, 3 seeds: 6 of 6 detectable attacks caught every time, the 2 built to be missed missed, 1 benign false flag a day; every finding valid OCSF, 876/876 evidence events resolve to their archived lines, a rerun writes nothing (`docs/ML_DATA.md`, `docs/ML_EVALUATION.md`). | Never run on real traffic, so its real false-flag rate is unknown. Per-window with 24 h of memory: slow attacks and daily jobs are outside it. No dashboard page for its flags (they show in the Explorer and the SIEMs as Detection Findings). |
+| i | Reduced parser development effort | **Met** | Formats with no parser: 85 correct, 18 missed, **0 wrong**; learned parsers 2,200/2,200 fields on new lines. | — |
+| j | Air-gapped deployment | **Met** | `/docs` references no external URL; usage statistics off; with the network cut off, 0 requests leave the machine and all 54 API endpoints render (`docs/AIRGAP.md`). | — |
+| k | Containerised | **Met in the build files** | `.dockerignore` keeps secrets, data and history out (checked on the build context); non-root, no compiler, one process per container, health check, read-only compose (`tests/test_container.py`). | The image has not been built end to end once: run `sh scripts/check_image.sh` on a machine with Docker. |
 
 ## The rest of the problem statement
 
-| The PS says | Verdict | What is lacking |
-|---|---|---|
-| Formats: Syslog, JSON, XML, CSV, CEF, LEEF | **Proven** | CSV with a header row now read by column name (`docs/PARSING.md`). A stored line re-parsed later in Parser Studio is read without its header. |
-| Billions of events per day | **Partial** | Measured today 2,343–2,395 events/s single process on 2 vCPU (4,866 with `-w 2` earlier). 1 billion/day = 11,574/s. No sharded runtime; no run on multi-core hardware. |
-| Preserving data for forensic and compliance purposes | **Partial** | No retention setting (CERT-In: 180 days); no incident-export bundle. |
-| Theme: Blockchain & Cybersecurity | **Partial** | Hash chains verified, but nothing signed or anchored: anyone with database access can rebuild a consistent chain. |
-| Perimeter devices incl. routers | **Partial** | NetFlow/IPFIX not received at all. |
-| The framework's own security | **Not proven** | No API authentication, CORS `*`, Streamlit XSRF off, `/api/integrity/tamper` open. (The container no longer runs as root or carries secrets.) |
+| The PS says | Verdict | Proof | What is still missing |
+|---|---|---|---|
+| Formats: Syslog, JSON, XML, CSV, CEF, LEEF, proprietary | **Met** | Probe: Windows XML → Authentication with user and address; generic XML, CEF, LEEF, JSON → both addresses; uploaded CSV with a header → rows read by column name; proprietary formats via packs or learning. | — |
+| Billions of events per day | **Partial** | Measured today on 2 vCPUs: 1,818–2,427 events/s per process across runs on shared hardware (157–210 M/day), 4,739 with two shards (409 M/day). The ML change did not move it: 1,837 before, 1,818 after, back to back. | 1 billion/day is 11,574 events/s: needs about five shards on multi-core hardware, never measured, and a sharded runtime that does not exist yet (only the benchmark shards). |
+| Preserving data for forensic and compliance purposes | **Partial** | Byte-exact archive, two hash chains, tamper detection, audit report PDF/JSON with fingerprint. | No retention setting (CERT-In: 180 days); no incident-export bundle. |
+| Theme: Blockchain & Cybersecurity | **Partial** | Append-only SHA-256 chains for events and deliveries, verified end to end. | Nothing signed or anchored outside the database: whoever controls it can rebuild a consistent chain. Signed checkpoints sent to the SIEMs would close this. |
+| Perimeter devices "regardless of source, format, vendor" | **Partial** | Firewalls and IDS/IPS well covered; everything is accepted and archived. | Router, WAF and proxy logs mostly unparsed; NetFlow/IPFIX not received. |
+| (Implied for NTRO) the framework's own security | **Not met** | Probe: `GET /api/events` → 200 with no credentials; CORS reflects any origin; Streamlit XSRF off; tamper endpoint reachable. | API token, CORS allow-list, XSRF on, tamper endpoint behind a demo switch, syslog sender allow-list (which also stops anyone imitating the detector's findings over syslog; today their transport gives them away). |
 
 ## Deliverables
 
 | Deliverable | State |
 |---|---|
-| Source code link | Pushed to GitHub. **No LICENSE.** Repo is named ULPF, product TRACELOG. `Claude outputs/` was committed and pushed in `8438e93`, including the rejection-risks and audit notes and the old demo video. |
-| README | Quickstart, measured numbers, real-log section added; body is still the long file-by-file blueprint. |
-| Architecture document (2 pages) | **Missing.** |
-| Demo video (2 min) | Recorded 21 Sep, before the measured dashboard, OCSF export, Security Lake, lossless, XML and real-log work. |
-| Presentation (5 slides) | **Missing.** |
+| Source code link | On GitHub (`VengefulSpartan/ULPF`), two commits behind local `main`. **No LICENSE.** `Claude outputs/` (including the rejection-risks notes) is in the public history. |
+| README with setup | Links to architecture, design, flow, runbook and real-log results at the top, with the diagram; the long file-by-file body is still there. |
+| Architecture document (max 2 pages) | `docs/ARCHITECTURE.md` and the slide diagram exist. **Needs a two-page PDF**: page 1 the diagram, page 2 components and measured results. |
+| Demo video (max 2 min) | **Out of date**: recorded 21 September, before the measured dashboard, real OCSF export, lossless storage, XML/CSV, real-log testing, the container and air-gap work. |
+| Presentation (max 5 slides) | **Missing.** `tracelog-workflow-ppt-guide.md` is a guide, not a deck. |
 
-## What we lack — ranked
+## What closes the gaps, in order
 
-**Tier 1 — a judge can check it in two minutes**
+1. **Deliverables** (a day's work, mostly not code): LICENSE (5 min), two-page architecture PDF (30 min),
+   the five-slide deck, re-record the video on the current build.
+2. **AI/ML on real traffic**: the detector is built and evaluated on synthetic days; run it on a real
+   network's logs to learn its false-flag rate, and add a dashboard page listing its flags.
+3. **Security baseline** (~3.5 h): API token, CORS allow-list, XSRF on, tamper endpoint behind demo mode.
+4. **Signed chain checkpoints** (~2 h): the Blockchain & Cybersecurity answer.
+5. **Kafka commit after store** (~1 h), then a sharded runtime and one run on multi-core hardware for the scale claim.
+6. **Build the image once** with `scripts/check_image.sh`.
+7. Hide Parser Studio's "Generate & Test" tab (15 min); packs for FTD 430xxx, WatchGuard, IOS, ModSecurity, Squid; retention; NetFlow/IPFIX.
 
-1. Deliverables: LICENSE, push the seven new commits, 2-page architecture doc, re-record the video, the deck.
-2. Build the image once with `sh scripts/check_image.sh` (a few minutes, needs Docker and internet).
+## Numbers you can quote, measured today
 
-Done since the first audit: lossless (a), XML, real-log testing, correlation confidences (f), container (k), air-gap (j), CSV headers.
-
-**Tier 2 — the theme, and proof for the claims**
-
-3. Signed chain checkpoints (Ed25519 over sequence + head, sent to the outputs as an external witness) (~2 h).
-4. AI/ML-ready demo: Parquet → per-source window features → a plain statistical baseline (~2 h).
-5. Security baseline: API token, CORS, XSRF on, tamper endpoint behind demo mode, receiver allow-list (~3.5 h).
-6. Packs where real logs came out empty: Cisco FTD 430002/430003 connection events, WatchGuard Firebox, Cisco IOS ACL, ModSecurity, Squid (~1 h each).
-
-**Tier 3 — completeness**
-
-7. Retention setting and incident-export bundle (~1 h).
-8. Sharded runtime and a benchmark on real multi-core hardware.
-9. NetFlow/IPFIX receiver (~2–3 h).
-
-## For the deck — measured, rerunnable claims
-
-- Tested on **17,768 real, third-party log lines from 43 sources** (Elastic's vendor test samples for 37 perimeter products, plus Loghub): **0 crashes, 0 invalid OCSF events, every line archived and hash-chained, chain verified.**
-- Cross-checked **13,633 address/port fields against Elastic's own parsers: 8,693 agree; of 711 differences, all but 3 trace to evidence in the data** — including a Cisco ASA direction error Elastic's pipeline ships and TRACELOG now fixes.
-- **0 wrong fields** on 13 log formats with no parser (85 correct, 18 left empty rather than guessed).
-- Every figure: `python scripts/evaluate_public_samples.py`, `scripts/evaluate_unseen_formats.py`, `scripts/benchmark.py`.
-- Every page works with no internet access: 0 requests leave the machine, checked in a network namespace with no route out.
-- The correlation page shows evidence, never an invented score.
+- 17,768 real third-party log lines from 43 sources: 0 crashes, 0 invalid OCSF events, all archived and hash-chained, chain verified.
+- 13,633 address and port fields checked against Elastic's own parsers: 8,693 agree; of 711 differences, all but 3 explained by evidence in the data.
+- 0 wrong fields on 13 formats no parser knows (85 correct, 18 left empty); learned parsers 2,200/2,200.
+- 1,818–2,427 events/s per process on 2 shared vCPUs across today's runs, 4,739 with two shards — archive, parse, OCSF and hash chain included.
+- On synthetic days with eight attacks injected (3 seeds): the 6 a per-window baseline can see caught every time, 2 to 4 minutes after they began; 1 false flag a day (a nightly backup); every flag an OCSF finding in the hash chain, listing the events it came from.
+- 302 tests passing; every page works with the network cut off.
