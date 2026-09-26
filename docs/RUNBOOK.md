@@ -55,7 +55,7 @@ the standard library and everything still works, about 5 % slower.
 pytest -q
 ```
 
-**Expect `302 passed`.** If tests fail, stop here — a number from a broken build is worse than no
+**Expect `305 passed`.** If tests fail, stop here — a number from a broken build is worse than no
 number.
 
 ```bash
@@ -163,7 +163,35 @@ filter by address, the dashboard, an export and a full chain verification.
 One billion events a day is 11,574 events/s sustained. Multiply your own rate by 86,400 and quote
 that, with the hardware next to it.
 
-## 6. If something goes wrong
+## 6. Run every check at once
+
+```bash
+pip install pyarrow                       # so the Parquet tests run instead of being skipped
+python scripts/run_all_checks.py          # about 15-25 minutes
+```
+
+It runs the test suite, the unseen-format scoring, a traced line, the benchmark (three one-process
+runs for a median, forwarder mode, and 2, 4, ... shards up to the number of CPUs), the real-log
+evaluation (fetching the public samples the first time, so it needs git and internet once), the
+detector's synthetic evaluation, and the container check if Docker is running. Everything lands in
+`results/<machine>-<time>/`: the raw output of each check, `machine.json` with the hardware, and
+`summary.md`, one page saying what each check measured and whether each claim held.
+
+`--quick` does smaller runs in about two minutes and skips the public samples and the image build;
+`--skip container,public` leaves out named checks. To compare two machines, copy one results folder
+to the other and run:
+
+```bash
+python scripts/run_all_checks.py --compare results/<first> results/<second>
+```
+
+It prints each measurement side by side with the ratio, and writes the table into the second folder.
+
+On Windows, run all of this inside WSL 2 (Ubuntu), with the project in the Linux home directory
+(`~/SIH26`), not under `/mnt/c`: SQLite on a Windows drive seen from WSL is several times slower, and
+the summary warns if the project is there.
+
+## 7. If something goes wrong
 
 - **`Address already in use`** — something else holds 8000, 8501 or 5514. Stop it, or edit the
   ports in `.env` and `config/tracelog.yaml`.

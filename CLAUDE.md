@@ -44,11 +44,14 @@ existing chain, so it is a versioned decision, never a side effect of a refactor
 ## Before you say something works
 
 ```bash
-pytest -q                                   # 302 passing
+pytest -q                                   # 305 passing
 python scripts/evaluate_unseen_formats.py   # 85 correct, 18 missed, 0 WRONG
 python scripts/benchmark.py -n 20000 -b 1000 --read
 python scripts/evaluate_public_samples.py   # real third-party logs: 0 crashes, 0 OCSF-invalid, 3 unexplained
 ```
+
+`python scripts/run_all_checks.py` runs all four and the rest (detector evaluation, traced line, container
+check) and writes `results/<machine>-<time>/summary.md`; use it on any new machine.
 
 Those four are the project's own acceptance test. The last one fetches Elastic's and Loghub's
 public sample logs into `data/public_samples/` (git-ignored, never committed) and regenerates
@@ -105,7 +108,7 @@ backend/services/
   ml/                  analytics row (the Parquet contract), window features, baseline detector
 frontend/              Streamlit dashboard, one module per page
 scripts/               benchmark, unseen-format scoring, sample sender, connector docs
-tests/                 302 tests; conftest.py gives every test an isolated database
+tests/                 305 tests; conftest.py gives every test an isolated database
 ```
 
 `backend/services/ingestion/stream.py` is the hot path: one transaction per batch, the chain head

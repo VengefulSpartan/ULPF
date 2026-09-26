@@ -392,6 +392,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 - **`requirements.txt`**: Consolidated, tested Python dependencies.
 - **`.env.example`**: Environment variable template for ports, database path, and optional LLM keys.
 - **`Dockerfile`**: Two-stage build: wheels are built with a compiler, the runtime stage has none, runs as an unprivileged `tracelog` user with the code read-only, one process per container, and a health check. **`.dockerignore`** keeps `.env`, databases, `.git`, venvs, tests and notes out of the image; `scripts/check_image.sh` builds the image and proves it.
+- **`scripts/run_all_checks.py`**: runs every test, evaluation and benchmark on the machine it is on and writes one summary with the hardware beside every number; `--compare` puts two machines side by side (docs/RUNBOOK.md §6).
 - **`scripts/export_features.py`**, **`scripts/run_baseline.py`**, **`scripts/evaluate_baseline.py`**: export window features, run the baseline detector once, and evaluate it on synthetic days with injected attacks (`scripts/synthetic_network.py`); see [`docs/ML_DATA.md`](docs/ML_DATA.md).
 - **`docker-compose.yml`**: API and dashboard as two containers from one image, sharing a data volume, with a read-only root filesystem, all capabilities dropped and no privilege escalation.
 
@@ -843,7 +844,7 @@ were, `tests/test_throughput.py` proves it, and the unseen-format score is uncha
 18 missed, **0 wrong**.
 
 To measure it on your own machine, and to set the project up on a machine that has never seen it,
-follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 302 passed), run, and the
+follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 305 passed), run, and the
 three benchmark commands including `-w N` for N ingest shards, each with its own hash chain.
 
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately

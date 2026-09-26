@@ -162,4 +162,4 @@ telemetry is off ([AIRGAP.md](AIRGAP.md)). Outputs connect only to the destinati
 | Formats with no parser | 85 correct, 18 missed, 0 wrong; learned parsers then fill 2,200 of 2,200 fields on new lines | `python scripts/evaluate_unseen_formats.py --learned` |
 | Throughput | 2,300–2,700 events/s per process on 2 vCPUs, archive, parse, OCSF and chain included; 4,866 with two shards | `python scripts/benchmark.py -n 20000 -b 1000 [-w 2]` |
 | Baseline detector, synthetic days | 3 seeds, 8 injected attacks each: the 6 a per-window baseline can see caught every time, the 2 built to stay under it missed; 1 false flag a day, a nightly backup; every finding valid OCSF and chained | `python scripts/evaluate_baseline.py`, report in [ML_EVALUATION.md](ML_EVALUATION.md) |
-| Tests | 302 passing | `pytest -q` |
+| Tests | 305 passing | `pytest -q` |
