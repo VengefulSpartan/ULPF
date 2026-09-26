@@ -316,7 +316,7 @@ def check_container(c: Check, quick: bool) -> None:
     if not shutil.which("docker") or not _run_text(["docker", "version", "--format", "{{.Server.Version}}"]):
         c.record("Container image", "claim", "SKIPPED", "Docker is not installed or not running", 0, {})
         return
-    r = c.run("container image build and checks", ["sh", "scripts/check_image.sh", "tracelog:check"],
+    r = c.run("container image build and checks", [PY, "scripts/check_image.py", "tracelog:check"],
               "container.log", 3600)
     oks = [l for l in r["stdout"].splitlines() if l.startswith("ok")]
     fails = [l for l in r["stdout"].splitlines() if "FAIL" in l]

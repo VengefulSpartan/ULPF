@@ -391,7 +391,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 - **`run_app.py`**: Single-command Python launcher that starts both the FastAPI backend (`:8000`) and the Streamlit dashboard (`:8501`) concurrently.
 - **`requirements.txt`**: Consolidated, tested Python dependencies.
 - **`.env.example`**: Environment variable template for ports, database path, and optional LLM keys.
-- **`Dockerfile`**: Two-stage build: wheels are built with a compiler, the runtime stage has none, runs as an unprivileged `tracelog` user with the code read-only, one process per container, and a health check. **`.dockerignore`** keeps `.env`, databases, `.git`, venvs, tests and notes out of the image; `scripts/check_image.sh` builds the image and proves it.
+- **`Dockerfile`**: Two-stage build: wheels are built with a compiler, the runtime stage has none, runs as an unprivileged `tracelog` user with the code read-only, one process per container, and a health check. **`.dockerignore`** keeps `.env`, databases, `.git`, venvs, tests and notes out of the image; `scripts/check_image.py` (or `sh scripts/check_image.sh`) builds the image and proves it, from Linux, macOS or Windows.
 - **`scripts/run_all_checks.py`**: runs every test, evaluation and benchmark on the machine it is on and writes one summary with the hardware beside every number; `--compare` puts two machines side by side (docs/RUNBOOK.md §6).
 - **`scripts/export_features.py`**, **`scripts/run_baseline.py`**, **`scripts/evaluate_baseline.py`**: export window features, run the baseline detector once, and evaluate it on synthetic days with injected attacks (`scripts/synthetic_network.py`); see [`docs/ML_DATA.md`](docs/ML_DATA.md).
 - **`docker-compose.yml`**: API and dashboard as two containers from one image, sharing a data volume, with a read-only root filesystem, all capabilities dropped and no privilege escalation.
@@ -712,7 +712,7 @@ python -m pytest -q
 ### 6. Docker Deployment
 ```bash
 docker compose up --build -d
-sh scripts/check_image.sh        # optional: proves no secret, database or compiler is in the image
+python scripts/check_image.py    # optional: builds the image, proves no secret, database or compiler is in it, and that it runs offline
 ```
 Access the dashboard at `http://localhost:8501` and the Swagger API at `http://localhost:8000/docs`. The backend container also publishes syslog on **514/udp and 514/tcp** (and 6514 for TLS), so devices can point at the Docker host's standard syslog port straight away. `config/` is mounted read-only, so connector changes need only `docker compose restart tracelog-backend`. The image runs one process: the API by default, the dashboard with `streamlit run frontend/app.py` as the command, which is what compose does. Secrets go in `.env` next to the compose file and reach the container as environment variables; `.dockerignore` keeps that file out of the image.
 
@@ -776,7 +776,7 @@ not S3 objects, so the output still works air-gapped.
 
 **Proof that nothing was lost: reconciliation and the audit report.** Every outcome of every stored event at every output is written to a hash-chained delivery ledger: delivered (live, re-sent, or after a restart), filtered out by the output's filter, dead-lettered, or delivered through another output. The **Reconcile & audit** tab on the Connectors page checks, for each output, that *owed = delivered + filtered out + waiting in dead letters + in flight*, with **Unaccounted** required to be 0, and verifies both hash chains (the per-event integrity chain and the delivery ledger). Editing, deleting or reordering delivery records is detected. **Generate audit report** downloads a PDF (and the same data as JSON) with the verdict, the chain-of-custody checks, the per-output reconciliation, dead letters, a timeline of outages, re-sends and re-routes, the log sources, and a fingerprint: the report's SHA-256 plus the head hashes of both chains, so it can be checked against TRACELOG later. On restart, events an output still owed (queued in memory when TRACELOG stopped, or stored while outputs were not running) are found in the ledger and sent again from the archive automatically.
 
-**Live demo with a real sensor.** `docker compose -f docker-compose.devices.yml up` starts a Suricata sensor, a target web server and a traffic generator. TRACELOG tails `suricata-logs/eve.json` through the `suricata-eve` file input in the default configuration, so its alerts appear in the dashboard as Detection Findings as they happen.
+**Live demo with a real sensor.** `docker compose -f docker-compose.devices.yml up` (next to `python run_app.py`), or `docker compose -f docker-compose.yml -f docker-compose.devices.yml up --build` for everything in Docker, starts a Suricata sensor, a target web server and a traffic generator that scans and probes it. Suricata shares the web server's network namespace, so it sees the attack on Linux, Docker Desktop for Windows and macOS alike, and it loads four demo rules from `config/suricata/tracelog-demo.rules`, so no rule download or internet is needed once the images are pulled. TRACELOG tails `suricata-logs/eve.json` through the `suricata-eve` file input in the default configuration, so the four alerts (connection burst, Nikto user agent, path traversal, SQL injection) appear in the dashboard as Detection Findings as they happen. The rules were checked by replaying the generator's traffic through Suricata 7 and TRACELOG's Suricata pack.
 
 ---
 
@@ -844,7 +844,7 @@ were, `tests/test_throughput.py` proves it, and the unseen-format score is uncha
 18 missed, **0 wrong**.
 
 To measure it on your own machine, and to set the project up on a machine that has never seen it,
-follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 305 passed), run, and the
+follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 311 passed), run, and the
 three benchmark commands including `-w N` for N ingest shards, each with its own hash chain.
 
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately

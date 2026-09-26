@@ -55,7 +55,7 @@ the standard library and everything still works, about 5 % slower.
 pytest -q
 ```
 
-**Expect `305 passed`.** If tests fail, stop here — a number from a broken build is worse than no
+**Expect `311 passed`.** If tests fail, stop here — a number from a broken build is worse than no
 number.
 
 ```bash
@@ -94,7 +94,7 @@ With Docker instead of Python:
 
 ```bash
 docker compose up --build
-sh scripts/check_image.sh     # optional: checks the image holds no secret, database or compiler
+python scripts/check_image.py   # optional: builds the image, checks what is in it, runs it offline
 ```
 
 Same ports, and syslog is published on 514 as well as 5514. For a machine with no internet access,
@@ -166,7 +166,6 @@ that, with the hardware next to it.
 ## 6. Run every check at once
 
 ```bash
-pip install pyarrow                       # so the Parquet tests run instead of being skipped
 python scripts/run_all_checks.py          # about 15-25 minutes
 ```
 

@@ -1,7 +1,21 @@
-version: '3.8'
+# A live sensor for the demo: a web server, a Suricata IDS watching it, and a traffic generator
+# that scans and probes it. Suricata writes EVE JSON to ./suricata-logs/eve.json, which TRACELOG's
+# default configuration tails (the suricata-eve input in config/tracelog.yaml), so its alerts
+# arrive as Detection Findings while the attack runs.
+#
+#   docker compose -f docker-compose.devices.yml up            # alongside `python run_app.py`
+#   docker compose -f docker-compose.yml -f docker-compose.devices.yml up --build   # all in Docker
+#
+# Suricata shares the web server's network namespace (network_mode: service:target-web), so its
+# eth0 is the server's own interface and it sees every packet to and from the server. That works
+# the same on Linux, on Docker Desktop for Windows and on macOS. Host networking did not: the
+# containers talk over a Docker bridge, which never crosses the host's eth0, and on Docker
+# Desktop the "host" is a VM, not the laptop.
+#
+# The rules are config/suricata/tracelog-demo.rules: four rules that match exactly what the
+# generator does, so the demo needs no rule download and no internet once the images are pulled.
 
 services:
-  # Target Web Application (Nginx)
   target-web:
     image: nginx:alpine
     container_name: tracelog-target-web
@@ -10,44 +24,45 @@ services:
     networks:
       - tracelog-security-net
 
-  # Real Open-Source Suricata IDS Device
   suricata:
     image: jasonish/suricata:latest
     container_name: tracelog-suricata
-    network_mode: "host"
+    network_mode: "service:target-web"
     cap_add:
       - NET_ADMIN
       - NET_RAW
       - SYS_NICE
     volumes:
       - ./suricata-logs:/var/log/suricata
-    environment:
-      - SURICATA_OPTIONS=-i eth0
+      - ./config/suricata:/etc/suricata/tracelog:ro
+    # arguments go straight to suricata: listen on the server's interface, load only the demo rules
+    command: ["-i", "eth0", "-S", "/etc/suricata/tracelog/tracelog-demo.rules"]
     depends_on:
       - target-web
 
-  # Real Network Traffic Generator (Nmap, Curl web attacks)
   traffic-generator:
     image: alpine:latest
     container_name: tracelog-traffic-generator
+    # waits for Suricata to load its rules and open the interface before the first packet
     command: >
       sh -c "
         apk add --no-cache curl nmap &&
-        echo 'Starting attack simulation...' &&
-        sleep 5 &&
-        echo '[+] Executing Nmap Port Scan...' &&
+        echo 'Waiting for the sensor...' &&
+        sleep 20 &&
+        echo '[+] TCP connect scan of the web server' &&
         nmap -sT -p 80,443,22 target-web || true &&
         sleep 3 &&
-        echo '[+] Executing Web Exploit Probes...' &&
-        curl -s -A 'Nikto/2.1.6' http://target-web:80/ || true &&
-        curl -s 'http://target-web:80/../../etc/passwd' || true &&
-        curl -s 'http://target-web:80/?id=1%27%20OR%20%271%27=%271' || true &&
+        echo '[+] Web attack probes' &&
+        curl -s -o /dev/null -A 'Nikto/2.1.6' http://target-web:80/ || true &&
+        curl -s -o /dev/null 'http://target-web:80/../../etc/passwd' || true &&
+        curl -s -o /dev/null 'http://target-web:80/?id=1%27%20OR%20%271%27=%271' || true &&
         echo '[+] Attack simulation completed.'
       "
     networks:
       - tracelog-security-net
     depends_on:
       - target-web
+      - suricata
 
 networks:
   tracelog-security-net:

@@ -1,7 +1,7 @@
 """
 File outputs for data lakes and air-gapped hand-off:
 - `file`: OCSF NDJSON, one file per day (path may contain strftime codes);
-- `parquet`: columnar files (requires the optional `pyarrow` package), queryable with DuckDB,
+- `parquet`: columnar files (pyarrow, in requirements.txt and the image), queryable with DuckDB,
   Spark, Athena or Trino, in one of two layouts:
 
     hive (default)    root/class_uid=4001/event_day=20260921/part-....parquet

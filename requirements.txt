@@ -12,8 +12,9 @@ httpx>=0.27.0
 pyyaml>=6.0
 # Kafka input and output connectors
 kafka-python-ng>=2.2.2
-# Optional: Parquet output (data lakes, Amazon Security Lake custom sources)
-#   pyarrow>=15.0
+# Parquet output (data lakes, Amazon Security Lake custom sources) and the analytics row
+# (backend/services/ml/rows.py). It was optional; without it the image could not write Parquet.
+pyarrow>=15.0
 # Audit report PDF export
 reportlab>=4.0
 orjson>=3.9          # serialises and reads the events; the pipeline falls back to json without it

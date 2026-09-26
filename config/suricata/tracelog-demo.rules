@@ -1,0 +1,8 @@
+# Rules for the live sensor demo (docker-compose.devices.yml). They match exactly what the demo's
+# traffic generator does, so the demo produces alerts with no rule download and no internet: the
+# ET Open rule set needs suricata-update and a network the demo may not have. For real
+# monitoring, point Suricata at a maintained rule set instead of this file.
+alert tcp any any -> any any (msg:"TRACELOG DEMO burst of new TCP connections from one source (scan)"; flow:stateless; flags:S,12; threshold:type both, track by_src, count 3, seconds 10; classtype:attempted-recon; sid:9000001; rev:1;)
+alert http any any -> any any (msg:"TRACELOG DEMO Nikto web scanner user agent"; flow:established,to_server; http.user_agent; content:"Nikto"; nocase; classtype:web-application-attack; sid:9000002; rev:1;)
+alert http any any -> any any (msg:"TRACELOG DEMO path traversal: request for /etc/passwd"; flow:established,to_server; http.uri; content:"/etc/passwd"; nocase; classtype:web-application-attack; sid:9000003; rev:1;)
+alert http any any -> any any (msg:"TRACELOG DEMO SQL injection: OR 1=1 in the query string"; flow:established,to_server; http.uri; content:" OR "; nocase; pcre:"/'\s*OR\s*'?1'?\s*=\s*'?1/Ui"; classtype:web-application-attack; sid:9000004; rev:1;)

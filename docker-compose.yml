@@ -33,6 +33,10 @@ services:
       - BACKEND_PORT=8000
       - ENVIRONMENT=demo
       - TRACELOG_CONFIG=/app/config/tracelog.yaml
+      # settings (backend/config.py); set them in .env to change them without editing this file
+      - BASELINE_EVERY_MINUTES=${BASELINE_EVERY_MINUTES:-0}   # 5 runs the ML detector as each window closes
+      - SEARCH_INDEX=${SEARCH_INDEX:-true}
+      - OCSF_VERSION=${OCSF_VERSION:-1.1.0}
       # Secrets referenced as ${VAR} in config/tracelog.yaml; set them in .env (never committed,
       # never copied into the image — see .dockerignore).
       - TRACELOG_HEC_TOKEN=${TRACELOG_HEC_TOKEN:-}

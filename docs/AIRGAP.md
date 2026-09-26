@@ -26,7 +26,7 @@ On a machine with internet access, from the repository:
 
 ```bash
 docker compose build                                   # builds tracelog:latest
-sh scripts/check_image.sh                              # optional: what is in the image, and does it run offline
+python scripts/check_image.py                          # optional: what is in the image, and does it run offline
 docker save tracelog:latest | gzip > tracelog-image.tar.gz
 ```
 

@@ -21,6 +21,8 @@ data/*
 !data/samples/
 .data/
 suricata-logs/
+# scripts/run_all_checks.py output: measurements of a machine, not part of the product
+results/
 
 # Version control, CI and editor state
 .git/
