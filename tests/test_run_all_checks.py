@@ -5,7 +5,7 @@ tested elsewhere; this tests the runner's own logic on recorded outputs.
 """
 import json
 
-from scripts.run_all_checks import _json_tail, compare, summary_md
+from scripts.run_all_checks import _json_tail, compare, default_shards, summary_md
 
 MACHINE = {"hostname": "old", "cpu": "Old CPU", "physical_cores": 2, "logical_cpus": 4, "memory_gb": 8,
            "os": "Linux", "wsl": False, "python": "3.12.3", "sqlite": "3.45.1", "on_mains_power": True,
@@ -47,3 +47,17 @@ def test_two_machines_are_compared_metric_by_metric(tmp_path):
     assert "| Dashboard figures (ms) | 150.0 | 60.0 | 0.40x |" in text
     assert "| 2 shards (events/s) | 4000 | 10000 | 2.50x |" in text
     assert "| Test suite (pytest) | PASS | PASS | |" in text
+
+
+def test_shards_stop_at_the_physical_cores_and_the_cap():
+    assert default_shards(4) == [2, 4]
+    assert default_shards(6) == [2, 4, 6]
+    assert default_shards(14) == [2, 4, 8]                # a 14-core laptop is not run at 14 by default
+    assert default_shards(14, max_shards=16) == [2, 4, 8, 14]
+    assert default_shards(1) == []
+
+
+def test_a_native_windows_run_says_its_numbers_are_not_comparable_with_linux():
+    text = summary_md({**MACHINE, "windows_native": True, "on_mains_power": False}, _results(2000, 150.0),
+                      "2026-09-26 10:00", 60)
+    assert "native Windows" in text and "| On mains power | NO: on battery |" in text

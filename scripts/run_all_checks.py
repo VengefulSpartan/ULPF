@@ -41,7 +41,11 @@ from typing import Any, Callable, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from backend.services.ml import limit_blas_threads  # noqa: E402
+
+limit_blas_threads()             # every check runs as a child process and inherits this environment
 PY = sys.executable
+DEFAULT_MAX_SHARDS = 8           # a laptop at full load on more cores than this, back to back, overheats
 BILLION_PER_DAY = 1_000_000_000 / 86_400        # 11,574 events/s
 
 
@@ -70,6 +74,8 @@ def machine() -> Dict[str, Any]:
     elif sys.platform == "darwin":
         info["cpu"] = _run_text(["sysctl", "-n", "machdep.cpu.brand_string"])
         info["physical_cores"] = int(_run_text(["sysctl", "-n", "hw.physicalcpu"]) or 0) or None
+    elif sys.platform == "win32":
+        info.update(_windows_hardware())
     else:
         info["cpu"] = platform.processor()
     meminfo = Path("/proc/meminfo")
@@ -78,8 +84,10 @@ def machine() -> Dict[str, Any]:
         info["memory_gb"] = round(int(m.group(1)) / 1024 / 1024, 1) if m else None
     elif sys.platform == "darwin":
         info["memory_gb"] = round(int(_run_text(["sysctl", "-n", "hw.memsize"]) or 0) / 1024 ** 3, 1)
+    info["windows_native"] = sys.platform == "win32"
     ac = list(Path("/sys/class/power_supply").glob("A*/online")) if Path("/sys/class/power_supply").exists() else []
-    info["on_mains_power"] = (ac[0].read_text().strip() == "1") if ac else None
+    if sys.platform != "win32":
+        info["on_mains_power"] = (ac[0].read_text().strip() == "1") if ac else None
     gov = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
     info["cpu_governor"] = gov.read_text().strip() if gov.exists() else None
     info["repo_on_windows_drive"] = str(ROOT).startswith("/mnt/")
@@ -96,6 +104,60 @@ def machine() -> Dict[str, Any]:
     info["packages"] = versions
     info["docker"] = _run_text(["docker", "version", "--format", "{{.Server.Version}}"]) if shutil.which("docker") else None
     return info
+
+
+def _windows_hardware() -> Dict[str, Any]:
+    """CPU name, physical cores, memory and mains power on Windows, without extra packages."""
+    import ctypes
+    out: Dict[str, Any] = {"cpu": platform.processor()}
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+        out["cpu"] = winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
+    except OSError:
+        pass
+    cores = _run_text(["powershell", "-NoProfile", "-Command",
+                       "(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum"])
+    out["physical_cores"] = int(cores) if cores.isdigit() else None
+
+    class MemoryStatus(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+    class PowerStatus(ctypes.Structure):
+        _fields_ = [("ACLineStatus", ctypes.c_byte), ("BatteryFlag", ctypes.c_byte),
+                    ("BatteryLifePercent", ctypes.c_byte), ("SystemStatusFlag", ctypes.c_byte),
+                    ("BatteryLifeTime", ctypes.c_ulong), ("BatteryFullLifeTime", ctypes.c_ulong)]
+    try:
+        mem = MemoryStatus()
+        mem.dwLength = ctypes.sizeof(MemoryStatus)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(mem)):
+            out["memory_gb"] = round(mem.ullTotalPhys / 1024 ** 3, 1)
+        power = PowerStatus()
+        if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(power)):
+            out["on_mains_power"] = {1: True, 0: False}.get(power.ACLineStatus)
+    except (AttributeError, OSError):
+        pass
+    return out
+
+
+def default_shards(physical_cores: int, max_shards: int = DEFAULT_MAX_SHARDS) -> List[int]:
+    """Shard counts to measure: 2, 4, 8 ... up to the physical cores, never more than max_shards.
+    Hyper-threads add little to an ingest that is mostly one core's work, and every extra process
+    at full load is heat."""
+    cores = min(physical_cores, max(1, max_shards))
+    return sorted({w for w in (2, 4, 8, 16, 32) if w <= cores} | ({cores} if cores >= 2 else set()))
+
+
+def cool_down(seconds: float) -> None:
+    """A pause between full-load runs, so each starts from a cool machine and a laptop is not held at
+    100% on every core for many minutes in a row."""
+    if seconds > 0:
+        print(f"  cooling down {seconds:.0f} s", flush=True)
+        time.sleep(seconds)
 
 
 # ---------------------------------------------------------------------------------------------------------
@@ -185,11 +247,13 @@ def _median(xs: List[float]) -> float:
     return round(statistics.median(xs), 1) if xs else 0.0
 
 
-def check_benchmark(c: Check, quick: bool, repeat: int, workers: List[int]) -> None:
+def check_benchmark(c: Check, quick: bool, repeat: int, workers: List[int], cooldown: float = 0) -> None:
     n = 20_000 if quick else 100_000
     runs = []
     total_s = 0.0
     for i in range(repeat):
+        if i:
+            cool_down(cooldown)
         r = c.run(f"benchmark, one process, run {i + 1}/{repeat}",
                   [PY, "scripts/benchmark.py", "-n", str(n), "-b", "1000", "--read", "--json"],
                   f"benchmark_single_{i + 1}.json", 3600)
@@ -215,6 +279,7 @@ def check_benchmark(c: Check, quick: bool, repeat: int, workers: List[int]) -> N
              f"({min(eps):,}-{max(eps):,}), {single['per_day_millions_median']}M/day; batch p50 "
              f"{single['batch_ms_p50_median']} ms, p99 {single['batch_ms_p99_median']} ms", total_s, single)
 
+    cool_down(cooldown)
     r = c.run("benchmark without the full-text index",
               [PY, "scripts/benchmark.py", "-n", str(n), "-b", "1000", "--json"], "benchmark_no_index.json", 3600,
               env={"SEARCH_INDEX": "false"})
@@ -228,7 +293,11 @@ def check_benchmark(c: Check, quick: bool, repeat: int, workers: List[int]) -> N
 
     per_worker = 10_000 if quick else 50_000
     scaling = []
+    if workers:
+        print(f"  the sharded runs load {max(workers)} cores fully for a minute or so each; "
+              f"stop with Ctrl+C if the machine gets too hot", flush=True)
     for w in workers:
+        cool_down(cooldown)
         r = c.run(f"benchmark, {w} shards", [PY, "scripts/benchmark.py", "-n", str(per_worker), "-b", "1000",
                                               "-w", str(w), "--json"], f"benchmark_{w}_shards.json", 3600)
         try:
@@ -343,6 +412,9 @@ def summary_md(info: Dict[str, Any], results: List[Dict[str, Any]], started: str
             ("CPU governor", info.get("cpu_governor") or "unknown"), ("Docker", info.get("docker") or "not available"),
             ("Packages", ", ".join(f"{k} {v}" for k, v in info["packages"].items() if v))]
     lines += [f"| {k} | {v} |" for k, v in rows]
+    if info.get("windows_native"):
+        lines += ["", "**Note:** native Windows. The file system and antivirus differ from Linux, so the throughput "
+                      "here is not comparable with a Linux or WSL run of the same code."]
     if info["repo_on_windows_drive"]:
         lines += ["", "**Warning:** the code is on a Windows drive (`/mnt/...`). Disk access there is much slower "
                       "from WSL, so the throughput numbers understate this machine. Clone into the Linux home "
@@ -416,7 +488,12 @@ def main(argv=None) -> int:
     ap.add_argument("--skip", default="", help="comma list of: tests, unseen, trace, benchmark, public, baseline, container")
     ap.add_argument("--repeat", type=int, default=3, help="one-process benchmark runs to take the median of (default 3)")
     ap.add_argument("--workers", default="", help="shard counts to benchmark, e.g. 2,4,8 (default: 2, 4, ... up to the "
-                                                  "number of logical CPUs)")
+                                                  "number of physical cores, at most --max-shards)")
+    ap.add_argument("--max-shards", type=int, default=DEFAULT_MAX_SHARDS,
+                    help=f"largest default shard count (default {DEFAULT_MAX_SHARDS}); raise it on a desktop or server "
+                         "with cooling for sustained full load")
+    ap.add_argument("--cooldown", type=float, default=None,
+                    help="seconds to pause between full-load benchmark runs (default 30, 5 with --quick)")
     ap.add_argument("--no-fetch", action="store_true", help="use public samples already in data/public_samples")
     ap.add_argument("--out", type=Path, help="results folder (default results/<host>-<time>)")
     ap.add_argument("--compare", nargs=2, type=Path, metavar=("OLD", "NEW"), help="compare two results folders")
@@ -432,22 +509,26 @@ def main(argv=None) -> int:
     if args.quick:
         skip |= {"public", "container"}
         args.repeat = min(args.repeat, 1)
-    cpus = os.cpu_count() or 2
+    info = machine()
+    cooldown = args.cooldown if args.cooldown is not None else (5 if args.quick else 30)
     workers = [int(w) for w in args.workers.split(",") if w.strip()] if args.workers else \
-        sorted({w for w in (2, 4, 8, 16, 32) if w <= cpus} | {cpus})
+        default_shards(info.get("physical_cores") or os.cpu_count() or 2, args.max_shards)
     if args.quick:
         workers = workers[:2]
     started = datetime.now().strftime("%Y-%m-%d %H:%M")
     out = args.out or ROOT / "results" / f"{socket.gethostname()}-{datetime.now():%Y%m%d-%H%M}"
     out.mkdir(parents=True, exist_ok=True)
-    info = machine()
     (out / "machine.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     print(f"TRACELOG checks on {info['hostname']}: {info.get('cpu')}, {info.get('logical_cpus')} CPUs, "
           f"{info.get('memory_gb')} GB, Python {info['python']}\nresults -> {out}\n", flush=True)
     if info["repo_on_windows_drive"]:
         print("WARNING: the code is on a Windows drive (/mnt/...); throughput will be understated.\n", flush=True)
     if info.get("on_mains_power") is False:
-        print("WARNING: running on battery; plug in for throughput numbers worth quoting.\n", flush=True)
+        print("WARNING: running on battery. Plug in: the benchmark draws full power, and on battery the numbers "
+              "are lower and a weak battery can switch the laptop off.\n", flush=True)
+    if info.get("windows_native"):
+        print("NOTE: native Windows. Everything runs, but the file system and antivirus differ from Linux, so "
+              "throughput is not comparable with a Linux or WSL run.\n", flush=True)
 
     c = Check(out)
     t0 = time.perf_counter()
@@ -455,23 +536,31 @@ def main(argv=None) -> int:
         ("tests", lambda: check_tests(c, args.quick)),
         ("unseen", lambda: check_unseen(c, args.quick)),
         ("trace", lambda: check_trace(c, args.quick)),
-        ("benchmark", lambda: check_benchmark(c, args.quick, max(1, args.repeat), workers)),
+        ("benchmark", lambda: check_benchmark(c, args.quick, max(1, args.repeat), workers, cooldown)),
         ("public", lambda: check_public(c, args.quick, fetch=not args.no_fetch)),
         ("baseline", lambda: check_baseline(c, args.quick)),
         ("container", lambda: check_container(c, args.quick)),
     ]
+    def save() -> float:
+        """Written after every check, so a run that is cut short keeps everything finished so far."""
+        seconds = time.perf_counter() - t0
+        summary = {"machine": info, "started": started, "seconds": round(seconds, 1), "results": c.results}
+        (out / "summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
+        (out / "summary.md").write_text(summary_md(info, c.results, started, seconds), encoding="utf-8")
+        return seconds
+
     for key, fn in steps:
         if key in skip:
             continue
         print(f"[{key}]", flush=True)
+        (out / "in_progress.txt").write_text(f"{key} started {datetime.now():%H:%M:%S}\n", encoding="utf-8")
         try:
             fn()
         except Exception as exc:        # one broken check must not lose the others' results
             c.record(key, "claim", "FAIL", f"the runner itself failed: {exc!r}", 0, {})
-    seconds = time.perf_counter() - t0
-    summary = {"machine": info, "started": started, "seconds": round(seconds, 1), "results": c.results}
-    (out / "summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
-    (out / "summary.md").write_text(summary_md(info, c.results, started, seconds), encoding="utf-8")
+        save()
+    (out / "in_progress.txt").unlink(missing_ok=True)
+    seconds = save()
     failed = [r for r in c.results if r["status"] == "FAIL"]
     print(f"\n{len(c.results)} checks in {seconds / 60:.1f} min, {len(failed)} failed. Summary: {out / 'summary.md'}")
     return 1 if failed else 0

@@ -55,7 +55,7 @@ the standard library and everything still works, about 5 % slower.
 pytest -q
 ```
 
-**Expect `311 passed`.** If tests fail, stop here — a number from a broken build is worse than no
+**Expect `313 passed`.** If tests fail, stop here — a number from a broken build is worse than no
 number.
 
 ```bash
@@ -177,7 +177,17 @@ detector's synthetic evaluation, and the container check if Docker is running. E
 `summary.md`, one page saying what each check measured and whether each claim held.
 
 `--quick` does smaller runs in about two minutes and skips the public samples and the image build;
-`--skip container,public` leaves out named checks. To compare two machines, copy one results folder
+`--skip container,public` leaves out named checks.
+
+The benchmark holds cores at full load. By default the runner pauses 30 seconds between benchmark
+runs (`--cooldown`) and measures shards only up to the physical core count and at most 8
+(`--max-shards`), so a laptop is not held at 100% on every core for minutes on end. A laptop that
+switches itself off under this load is protecting itself from heat or from a supply that cannot
+keep up: plug it in, give it airflow, and check Windows' Event Viewer (System log, Kernel-Power
+events) before running again. The summary is written after every check, and `in_progress.txt`
+in the results folder names the check that was running if a run is cut short. numpy's BLAS is
+limited to one thread per process (`backend/services/ml/__init__.py`), which avoids the
+"OpenBLAS error: Memory allocation still failed" that many-core Windows machines can hit. To compare two machines, copy one results folder
 to the other and run:
 
 ```bash

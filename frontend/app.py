@@ -1,5 +1,11 @@
-import streamlit as st
-from pathlib import Path
+import os
+
+# before streamlit and pandas load numpy: one BLAS thread (backend/services/ml/__init__.py says why)
+for _name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_name, "1")
+
+import streamlit as st  # noqa: E402
+from pathlib import Path  # noqa: E402
 from frontend.api_client import APIClient
 
 # Page setup

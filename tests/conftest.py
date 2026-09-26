@@ -1,4 +1,5 @@
 """Shared fixtures: isolated database, and local mock servers standing in for SIEMs and log tools."""
+import backend.services.ml  # noqa: F401  (limits numpy's BLAS threads before any test loads numpy)
 import json
 import socket
 import socketserver

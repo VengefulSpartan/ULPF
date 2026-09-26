@@ -3,6 +3,10 @@ import sys
 import time
 import os
 
+# numpy's BLAS: one thread per process (backend/services/ml/__init__.py says why); both children inherit it
+for _name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_name, "1")
+
 def main():
     print("=" * 65)
     print("  TRACELOG — Universal Log Pre-processing Framework")
