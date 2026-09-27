@@ -8,14 +8,24 @@ def render_overview():
     st.markdown("## Operational Overview")
     st.caption("Perimeter Network Security Log Pre-processing, Verification & Investigation Status")
 
-    # Seed Sample Dataset Bar
-    col_info, col_seed = st.columns([3, 1])
+    # Quick Demo Setup & Seed Action Bar
+    col_info, col_seed = st.columns([3, 1], vertical_alignment="center")
     with col_info:
-        st.info("💡 **Quick Demo Setup**: Load pre-packaged synthetic perimeter network logs from Cisco ASA, Palo Alto NGFW, Fortinet VPN, and Suricata IDS to explore live correlation and verification.", icon="ℹ️")
+        st.markdown(
+            """
+            <div style="background: #F1F5F9; border: 1px solid #CBD5E1; border-left: 4px solid #0284C7; border-radius: 6px; padding: 12px 16px;">
+                <div style="font-weight: 700; color: #0F172A; font-size: 0.88rem; letter-spacing: 0.2px;">Quick Demo Setup</div>
+                <div style="color: #475569; font-size: 0.82rem; margin-top: 3px; line-height: 1.4;">
+                    Load pre-packaged synthetic perimeter network logs (Cisco ASA, Palo Alto NGFW, Fortinet VPN, Suricata IDS) to explore live correlation, normalization, and cryptographic verification.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     with col_seed:
-        if st.button("🚀 Load Sample Dataset", type="primary", use_container_width=True):
+        if st.button("Load Sample Dataset", type="primary", use_container_width=True):
             res = APIClient.seed_samples()
-            st.success(f"✓ Ingested {res.get('ingested_count', 8)} synthetic perimeter events!")
+            st.success(f"Ingested {res.get('ingested_count', 8)} synthetic perimeter events.")
             st.rerun()
 
     # Load Analytics KPIs
@@ -43,15 +53,15 @@ def render_overview():
     m1, m2, m3, m4, m5 = st.columns(5)
     revisions = pipe.get("revisions", 0)
     card(m1, "Normalized events", f"{total_events:,}",
-         f"current versions · {revisions:,} re-parsed" if revisions else "OCSF 1.1.0, one per archived line")
+         f"current versions | {revisions:,} re-parsed" if revisions else "OCSF 1.1.0, one per archived line")
     card(m2, "Active sources", f"{active_sources:,}", "devices and forwarders")
     known = parsing.get("known_parser_pct", 0.0)
-    card(m3, "Read by a known parser", f"{known}%" if total_events else "–",
-         f"{parsing.get('vendor_pack', 0):,} vendor packs · {parsing.get('learned', 0):,} learned · "
+    card(m3, "Read by a known parser", f"{known}%" if total_events else "-",
+         f"{parsing.get('vendor_pack', 0):,} vendor packs | {parsing.get('learned', 0):,} learned | "
          f"{parsing.get('generic', 0):,} generic (unverified)",
          "#2E7D32" if known >= 90 else "#B45309" if total_events else "#123B5D")
     valid = conf.get("valid_pct", 0.0)
-    card(m4, "OCSF 1.1.0 conformance", f"{valid}%" if conf.get("checked") else "–",
+    card(m4, "OCSF 1.1.0 conformance", f"{valid}%" if conf.get("checked") else "-",
          f"latest {conf.get('checked', 0):,} events checked against OCSF",
          "#2E7D32" if valid == 100 else "#B91C1C" if conf.get("checked") else "#123B5D")
     ok = pipe.get("consistent", True)

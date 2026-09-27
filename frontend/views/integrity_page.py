@@ -15,13 +15,13 @@ def render_integrity():
         """
     )
 
-    tab_audit, tab_demo, tab_ledger = st.tabs(["🔒 Chain Audit & Verification", "⚠️ Controlled Tampering Demo", "📜 Ledger Audit Records"])
+    tab_audit, tab_demo, tab_ledger = st.tabs(["Chain Audit & Verification", "Controlled Tampering Demo", "Ledger Audit Records"])
 
     # 1. Verification Tab
     with tab_audit:
         col_btn, col_blank = st.columns([1, 2])
         with col_btn:
-            run_audit = st.button("🔍 Run Full Chain Cryptographic Audit", type="primary", use_container_width=True)
+            run_audit = st.button("Run Full Chain Cryptographic Audit", type="primary", use_container_width=True)
 
         # Run verification
         res = APIClient.verify_integrity()
@@ -35,7 +35,7 @@ def render_integrity():
             st.markdown(
                 f"""
                 <div style="background-color: #E8F5E9; border: 2px solid #2E7D32; border-radius: 6px; padding: 18px; margin: 15px 0;">
-                    <div style="font-size: 1.25rem; font-weight: 700; color: #2E7D32;">✓ CHAIN INTEGRITY FULLY VERIFIED</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: #2E7D32;">CHAIN INTEGRITY FULLY VERIFIED</div>
                     <div style="color: #1B5E20; margin-top: 4px;">
                         All {total} records in the cryptographic ledger match their SHA-256 preimages and hash pointers. 
                         Zero tampering, zero deletions, and zero reordering detected. Audit completed in {time_ms} ms.
@@ -48,7 +48,7 @@ def render_integrity():
             st.markdown(
                 f"""
                 <div style="background-color: #FFEBEE; border: 2px solid #D32F2F; border-radius: 6px; padding: 18px; margin: 15px 0;">
-                    <div style="font-size: 1.25rem; font-weight: 700; color: #D32F2F;">⚠️ INTEGRITY BREACH DETECTED</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: #D32F2F;">INTEGRITY BREACH DETECTED</div>
                     <div style="color: #B71C1C; margin-top: 4px;">
                         Cryptographic ledger verification failed! First corrupted sequence: #{res.get('first_corrupted_seq')}. 
                         {failed} record(s) failed validation. Hash chain has been violated.
@@ -99,7 +99,7 @@ def render_integrity():
 
         col_act1, col_act2 = st.columns(2)
         with col_act1:
-            if st.button("💥 Simulate Unauthorized Record Modification", type="primary"):
+            if st.button("Simulate Unauthorized Record Modification", type="primary"):
                 tamper_res = APIClient.simulate_tamper(sequence_num=target_seq, value=tamper_val)
                 if "error" in tamper_res:
                     st.error(tamper_res["error"])
@@ -108,7 +108,7 @@ def render_integrity():
                     st.rerun()
 
         with col_act2:
-            if st.button("🛡️ Restore Record to Legitimate State"):
+            if st.button("Restore Record to Legitimate State"):
                 rest_res = APIClient.restore_record(sequence_num=target_seq)
                 if "error" in rest_res:
                     st.error(rest_res["error"])

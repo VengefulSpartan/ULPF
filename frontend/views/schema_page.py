@@ -38,7 +38,7 @@ def render_schema():
             """
         )
 
-    tab_classes, tab_fields, tab_sample = st.tabs(["🏛️ OCSF Classes", "📋 Field Dictionary & Mappings", "📄 Schema Example"])
+    tab_classes, tab_fields, tab_sample = st.tabs(["OCSF Classes", "Field Dictionary & Mappings", "Schema Example"])
 
     with tab_classes:
         st.markdown("##### Standardized OCSF Classes")

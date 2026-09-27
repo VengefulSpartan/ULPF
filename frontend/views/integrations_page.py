@@ -217,9 +217,9 @@ def _export():
     events = APIClient.list_events(limit=500).get("events", [])
     ocsf = [to_ocsf(e["normalized"]) for e in events if e.get("normalized")]
     c1, c2, c3 = st.columns(3)
-    c1.download_button("📥 OCSF NDJSON", "\n".join(json.dumps(e) for e in ocsf) + ("\n" if ocsf else ""),
+    c1.download_button("OCSF NDJSON", "\n".join(json.dumps(e) for e in ocsf) + ("\n" if ocsf else ""),
                        file_name="tracelog_ocsf.ndjson", mime="application/x-ndjson", use_container_width=True)
-    c2.download_button("📥 OCSF JSON array", json.dumps(ocsf, indent=2), file_name="tracelog_ocsf.json",
+    c2.download_button("OCSF JSON array", json.dumps(ocsf, indent=2), file_name="tracelog_ocsf.json",
                        mime="application/json", use_container_width=True)
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=["sequence_num", "time", "class_name", "severity", "src_ip", "dst_ip",
@@ -227,7 +227,7 @@ def _export():
     w.writeheader()
     for e in events:
         w.writerow({k: e.get(k) for k in w.fieldnames})
-    c3.download_button("📥 Summary CSV", buf.getvalue(), file_name="tracelog_events.csv", mime="text/csv",
+    c3.download_button("Summary CSV", buf.getvalue(), file_name="tracelog_events.csv", mime="text/csv",
                        use_container_width=True)
     st.caption(f"Latest {len(ocsf)} events. For continuous export use a `file` or `parquet` output.")
     st.markdown(
@@ -242,8 +242,8 @@ def _reconcile_view():
                "letters, or in flight. Each outcome is a record in a hash-chained delivery ledger, so the numbers "
                "below can be proven, not just displayed.")
     top = st.columns([1, 1, 3])
-    top[0].button("↻ Re-check", key="rec_refresh", use_container_width=True)
-    if top[1].button("🧾 Generate audit report", key="rec_report", type="primary", use_container_width=True):
+    top[0].button("Re-check", key="rec_refresh", use_container_width=True)
+    if top[1].button("Generate audit report", key="rec_report", type="primary", use_container_width=True):
         with st.spinner("Verifying both chains and building the report..."):
             st.session_state["audit_pdf"] = APIClient.get_audit_report("pdf")
             st.session_state["audit_json"] = APIClient.get_audit_report("json")
@@ -252,7 +252,7 @@ def _reconcile_view():
         with top[2]:
             d1, d2 = st.columns(2)
             if pdf and pdf.get("ok"):
-                d1.download_button("📄 Download PDF", pdf["data"], file_name=pdf["filename"], mime="application/pdf",
+                d1.download_button("Download PDF", pdf["data"], file_name=pdf["filename"], mime="application/pdf",
                                    use_container_width=True, key="dl_pdf")
             elif pdf:
                 d1.error(pdf.get("error"))
@@ -290,7 +290,7 @@ def _reconcile_view():
     rows = [{"Output": o["output"], "Owed": o["owed"], "Delivered": o["delivered"], "Re-sent": o["resent"],
              "Via other": o["rerouted"], "Filtered": o["filtered"], "Dead letters": o["dead_letter_waiting"],
              "In flight": o["in_flight"], "Unaccounted": o["unaccounted"], "Dupes": o["duplicates"],
-             "Status": "✅ balanced" if o["status"] == "balanced" else "❌ unaccounted"} for o in rec["outputs"]]
+             "Status": "Balanced" if o["status"] == "balanced" else "Unaccounted"} for o in rec["outputs"]]
     if rows:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     else:
@@ -322,7 +322,7 @@ def render_integrations():
     st.caption("Plug-and-play: devices and forwarders stream in over syslog, Splunk HEC, OTLP, files or Kafka; "
                "normalised OCSF events stream out to SIEMs, observability platforms and data lakes.")
     tab_live, tab_rec, tab_src, tab_dst, tab_exp = st.tabs(
-        ["📡 Live status", "🧾 Reconcile & audit", "🔌 Connect a log source", "🎯 Connect a destination", "💾 Export"])
+        ["Live Status", "Reconcile & Audit", "Connect a Log Source", "Connect a Destination", "Export"])
     with tab_live:
         _live_status()
     with tab_rec:

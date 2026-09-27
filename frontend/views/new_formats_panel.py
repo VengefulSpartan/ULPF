@@ -14,7 +14,7 @@ FIELDS = {"src_ip": "source IP", "src_port": "source port", "dst_ip": "destinati
           "signature": "threat / signature"}
 NONE = "— (not a field)"
 LABEL_TO_ROLE = {v: k for k, v in FIELDS.items()}
-STATUS = {"new": "🟠 new", "learned": "🟢 parser live", "ignored": "⚪ ignored"}
+STATUS = {"new": "new", "learned": "parser live", "ignored": "ignored"}
 
 
 def _card(title: str, value: str, sub: str = "", color: str = "#0F172A") -> str:
@@ -111,7 +111,7 @@ def _format_panel(fid: str) -> None:
     product = top[1].text_input("Product", value=(parser or {}).get("product") or "", key=f"p_{fid}",
                                 placeholder="e.g. Firebox")
     if not parser or parser["status"] == "rejected":
-        if top[2].button(f"🧠 Learn a parser from {fmt['samples']} lines", type="primary", key=f"learn_{fid}",
+        if top[2].button(f"Learn a parser from {fmt['samples']} lines", type="primary", key=f"learn_{fid}",
                          use_container_width=True, disabled=fmt["samples"] < 2):
             with st.spinner("Profiling every part of the line across the samples and testing on held-out lines…"):
                 res = APIClient.learn_format(fid, vendor, product)
@@ -135,7 +135,7 @@ def _format_panel(fid: str) -> None:
 def _review(fid: str, parser: Dict[str, Any], vendor: str, product: str) -> None:
     pid, spec, val = parser["id"], parser["spec"], parser.get("validation") or {}
     st.markdown("###### Learned parser")
-    state = {"candidate": "🟠 candidate, not applied yet", "approved": "🟢 approved and live"}.get(parser["status"],
+    state = {"candidate": "candidate, not applied yet", "approved": "approved and live"}.get(parser["status"],
                                                                                                parser["status"])
     st.markdown(f"**{parser['name']}** · {state} · OCSF class {parser['class_uid']} {parser['class_name']} · learned "
                 f"from {spec.get('samples_learned', '?')} lines"
@@ -198,14 +198,14 @@ def _review(fid: str, parser: Dict[str, Any], vendor: str, product: str) -> None
 
     b = st.columns([1.2, 1, 1, 1])
     reviewer = b[0].text_input("Your name (recorded with the approval)", key=f"who_{pid}")
-    if b[1].button("💾 Save changes & re-test", key=f"save_{pid}", use_container_width=True,
+    if b[1].button("Save changes & re-test", key=f"save_{pid}", use_container_width=True,
                    disabled=not (roles or confirmed or vendor or product)):
         res = APIClient.edit_learned(pid, roles, confirmed, reviewer or "reviewer", vendor, product)
         if res.get("error"):
             st.error(res["error"])
         else:
             st.rerun()
-    if b[2].button("✅ Approve & apply", type="primary", key=f"approve_{pid}", use_container_width=True,
+    if b[2].button("Approve & apply", type="primary", key=f"approve_{pid}", use_container_width=True,
                    disabled=parser["status"] == "approved" and not roles):
         if not reviewer.strip():
             st.error("Enter your name: approvals are recorded with the approver.")
@@ -237,7 +237,7 @@ def _review(fid: str, parser: Dict[str, Any], vendor: str, product: str) -> None
                     "archive. Nothing is overwritten: each result is a new event appended to the integrity chain "
                     "that names the event it supersedes, and it is sent to the configured outputs so SIEMs get the "
                     "corrected fields.")
-        if st.button("🔁 Re-parse past lines", key=f"reparse_{pid}"):
+        if st.button("Re-parse past lines", key=f"reparse_{pid}"):
             with st.spinner("Re-parsing from the archive…"):
                 res = APIClient.reparse_learned(pid)
             if res.get("error"):
