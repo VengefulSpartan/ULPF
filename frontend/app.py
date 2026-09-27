@@ -1,5 +1,12 @@
-import streamlit as st
+import sys
 from pathlib import Path
+
+# Ensure repository root is on sys.path for Streamlit Cloud and container hosting
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import streamlit as st
 from frontend.api_client import APIClient
 
 # Page setup
