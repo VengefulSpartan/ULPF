@@ -82,6 +82,22 @@ class StoredEvent:
         return self._ocsf
 
 
+def split_lines(data: bytes) -> List[bytes]:
+    """
+    The lines of a byte stream, each with its own terminator still attached, so split_framing
+    records whether it was LF or CRLF. A last line without a terminator is returned as it is.
+
+    Every input that cuts a stream into lines uses this (file tail, uploads, HTTP bodies, batched
+    datagrams). Cutting at LF and dropping it would leave the CR of a CRLF line inside the event:
+    files written on Windows, and many Windows senders, end every line with CRLF.
+    """
+    parts = data.split(b"\n")
+    lines = [part + b"\n" for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
+
+
 def split_framing(raw: bytes) -> Tuple[bytes, str]:
     """(the line's bytes, the terminator that framed it: 'CRLF', 'LF' or '').
 

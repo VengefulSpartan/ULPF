@@ -21,7 +21,7 @@ from backend.connectors.inputs.pollers import FileTailInput
 from backend.connectors.inputs.syslog import SyslogStreamParser
 from backend.connectors.outputs import build_sink
 from backend.connectors.outputs.formats import cef, leef
-from backend.services.ingestion.stream import InboundRecord, StreamIngestor, decode_raw
+from backend.services.ingestion.stream import InboundRecord, StreamIngestor, decode_raw, split_lines
 from backend.services.integrity.ledger import IntegrityLedger
 from backend.services.normalization.ocsf_export import validate
 from tests.conftest import free_port
@@ -49,7 +49,7 @@ def test_rfc6587_framing_handles_octet_counting_and_lf_split_across_reads():
     for i in range(0, len(stream), 7):  # deliver in awkward 7-byte chunks
         got += p.feed(stream[i:i + 7])
     got += p.flush()
-    assert got == [m1, m2, m3]
+    assert got == [m1, m2 + b"\n", m3]   # an LF-framed message keeps its LF, for the writer to record
 
 
 def test_decode_keeps_bytes_exactly_and_only_strips_framing():
@@ -130,7 +130,7 @@ def test_syslog_udp_and_tcp_to_splunk_and_file_end_to_end(isolated_db, mock_http
         assert len(events) == 4
         assert all(e["sourcetype"] == "ocsf:tracelog" and validate(e["event"]) == [] for e in events)
         assert mock_http.requests[0]["headers"]["Authorization"] == "Splunk t0k"
-        archived = [json.loads(l) for f in tmp_path.glob("ocsf-*.ndjson") for l in f.read_text().splitlines()]
+        archived = [json.loads(l) for f in tmp_path.glob("ocsf-*.ndjson") for l in f.read_text(encoding="utf-8").splitlines()]
         assert len(archived) == 4
         assert {o["name"]: o["sent"] for o in status["outputs"]} == {"splunk": 4, "archive": 4}
     finally:
@@ -141,20 +141,37 @@ def test_syslog_udp_and_tcp_to_splunk_and_file_end_to_end(isolated_db, mock_http
 def test_file_tail_input_follows_rotation_and_remembers_offsets(isolated_db, tmp_path):
     log = tmp_path / "remote" / "pa.log"
     log.parent.mkdir()
-    log.write_text(PAN_TRAFFIC + "\n")
+    log.write_text(PAN_TRAFFIC + "\n", encoding="utf-8")
     got = []
     cfg = FileInput(name="rsyslog", paths=[str(tmp_path / "remote" / "*.log")], start_at="beginning")
     tail = FileTailInput(cfg, got.extend, str(tmp_path / "state"))
     assert tail.poll_once() == 1
-    with log.open("a") as fh:
+    with log.open("a", encoding="utf-8") as fh:
         fh.write(FORTI_TRAFFIC + "\npartial line without newline")
     assert tail.poll_once() == 1                     # the partial line waits for its newline
     tail2 = FileTailInput(cfg, got.extend, str(tmp_path / "state"))  # restart: offsets persisted
     assert tail2.poll_once() == 0
     log.unlink()
-    log.write_text(ASA_DENY + "\n")                  # rotation: new file at the same path
+    log.write_text(ASA_DENY + "\n", encoding="utf-8")                  # rotation: new file at the same path
     assert tail2.poll_once() == 1
-    assert [r.raw.decode() for r in got] == [PAN_TRAFFIC, FORTI_TRAFFIC, ASA_DENY]
+    # each record keeps its terminator (LF here, CRLF where Windows wrote the file) for the writer to record
+    assert [decode_raw(r.raw)[0] for r in got] == [PAN_TRAFFIC, FORTI_TRAFFIC, ASA_DENY]
+
+
+def test_a_file_written_on_windows_is_tailed_without_carriage_returns(isolated_db, tmp_path):
+    log = tmp_path / "win.log"
+    log.write_bytes(PAN_TRAFFIC.encode() + b"\r\n" + ASA_DENY.encode() + b"\r\n")
+    cfg = FileInput(name="windows", paths=[str(log)], start_at="beginning")
+    FileTailInput(cfg, StreamIngestor().ingest, str(tmp_path / "state")).poll_once()
+    with isolated_db.get_connection() as conn:
+        rows = conn.execute("SELECT raw_text, raw_framing FROM raw_logs ORDER BY rowid").fetchall()
+    assert [(r["raw_text"], r["raw_framing"]) for r in rows] == [(PAN_TRAFFIC, "CRLF"), (ASA_DENY, "CRLF")]
+
+
+def test_crlf_over_tcp_and_http_is_framing_not_content():
+    p = SyslogStreamParser(65536)
+    assert [decode_raw(m) for m in p.feed(b"<13>one\r\n<13>two\n")] == [("<13>one", "utf-8"), ("<13>two", "utf-8")]
+    assert split_lines(b"a\r\nb\nc") == [b"a\r\n", b"b\n", b"c"]
 
 
 # ------------------------------------------------------------------ HTTP receivers
@@ -264,7 +281,7 @@ def test_elasticsearch_bulk_format_and_partial_rejection(mock_http, ocsf_events,
     assert "@timestamp" in json.loads(lines[1])
     assert mock_http.requests[0]["headers"]["Authorization"].startswith("Basic ")
     assert sink.metrics["dead_lettered"] == 1 and sink.metrics["sent"] == len(ocsf_events) - 1
-    dead = [json.loads(l) for l in (tmp_path / "dead_letter" / "os.ndjson").read_text().splitlines()]
+    dead = [json.loads(l) for l in (tmp_path / "dead_letter" / "os.ndjson").read_text(encoding="utf-8").splitlines()]
     assert len(dead) == 1 and dead[0]["kind"] == "rejected" and dead[0]["source"] == "lab-fw"
 
 
@@ -359,7 +376,7 @@ def test_gelf_udp_compressed_and_tcp_null_delimited(udp_capture, tcp_capture, oc
 
 def test_file_and_parquet_outputs(ocsf_events, tmp_path):
     run_sink(out("f", "file", path=str(tmp_path / "x-%Y.ndjson")), ocsf_events, tmp_path)
-    assert sum(len(p.read_text().splitlines()) for p in tmp_path.glob("x-*.ndjson")) == len(ocsf_events)
+    assert sum(len(p.read_text(encoding="utf-8").splitlines()) for p in tmp_path.glob("x-*.ndjson")) == len(ocsf_events)
     pytest.importorskip("pyarrow")
     import pyarrow.parquet as pq
     run_sink(out("p", "parquet", root=str(tmp_path / "lake")), ocsf_events, tmp_path)
@@ -374,7 +391,7 @@ def test_unreachable_output_retries_then_dead_letters(ocsf_events, tmp_path):
     sink = build_sink(cfg, data_dir=str(tmp_path))
     sink._deliver([(e, "") for e in ocsf_events])
     assert sink.metrics["retries"] == 2 and sink.metrics["failed"] == len(ocsf_events)
-    dead = [json.loads(l) for l in (tmp_path / "dead_letter" / "down.ndjson").read_text().splitlines()]
+    dead = [json.loads(l) for l in (tmp_path / "dead_letter" / "down.ndjson").read_text(encoding="utf-8").splitlines()]
     assert len(dead) == len(ocsf_events)
     assert all(d["kind"] == "undeliverable" and d["attempts"] == 3 and d["output"] == "down" for d in dead)
 
@@ -407,21 +424,21 @@ def test_env_vars_are_expanded_in_config(tmp_path, monkeypatch):
     monkeypatch.setenv("HEC_T", "from-env")
     p = tmp_path / "c.yaml"
     p.write_text("tracelog:\n  outputs:\n    - {name: s, type: splunk_hec, url: 'https://x:8088', token: '${HEC_T}',"
-                 " batch_size: 10}\n")
+                 " batch_size: 10}\n", encoding="utf-8")
     cfg = load_config(str(p))
     assert cfg.outputs[0].settings["token"] == "from-env" and cfg.outputs[0].batch_size == 10
 
 
 def test_dotenv_fills_gaps_env_wins_and_blank_tokens_are_dropped(tmp_path, monkeypatch):
     env = tmp_path / ".env"
-    env.write_text('# secrets\nSPLUNK_T="from-dotenv"   # quoted\nexport DD=abc # comment\nEMPTY_T=""\nSHADOW=file\n')
+    env.write_text('# secrets\nSPLUNK_T="from-dotenv"   # quoted\nexport DD=abc # comment\nEMPTY_T=""\nSHADOW=file\n', encoding="utf-8")
     monkeypatch.setenv("TRACELOG_DOTENV", str(env))
     monkeypatch.setenv("SHADOW", "process-env")
     monkeypatch.setenv("BLANK", "")
     p = tmp_path / "c.yaml"
     p.write_text("tracelog:\n  inputs:\n    http: {tokens: ['${EMPTY_T}', '${UNSET_T}']}\n  outputs:\n"
                  "    - {name: s, type: splunk_hec, url: 'https://x', token: '${SPLUNK_T}', index: '${SHADOW}',"
-                 " source: '${BLANK:-fallback}', sourcetype: '${DD}'}\n")
+                 " source: '${BLANK:-fallback}', sourcetype: '${DD}'}\n", encoding="utf-8")
     cfg = load_config(str(p))
     s = cfg.outputs[0].settings
     assert (s["token"], s["index"], s["source"], s["sourcetype"]) == ("from-dotenv", "process-env", "fallback", "abc")

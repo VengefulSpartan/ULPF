@@ -75,7 +75,7 @@ def test_outage_records_kind_source_attempts_and_reason(mock_http, events, tmp_p
         assert wait_for(lambda: sink.metrics["dead_lettered"] == len(events))
     finally:
         sink.stop()
-    lines = [json.loads(l) for l in (tmp_path / "dead_letter" / "splunk.ndjson").read_text().splitlines()]
+    lines = [json.loads(l) for l in (tmp_path / "dead_letter" / "splunk.ndjson").read_text(encoding="utf-8").splitlines()]
     assert len(lines) == len(events)
     first = lines[0]
     assert first["kind"] == "undeliverable" and first["attempts"] == 2 and first["output"] == "splunk"
@@ -181,7 +181,7 @@ def test_replay_through_another_output(mock_http, events, tmp_path):
                          data_dir=str(tmp_path))
     result = archive.request_replay(splunk.store)
     assert result["delivered"] == len(events)
-    assert len((tmp_path / "rescued.ndjson").read_text().splitlines()) == len(events)
+    assert len((tmp_path / "rescued.ndjson").read_text(encoding="utf-8").splitlines()) == len(events)
     assert splunk.store.summary()["waiting"] == 0
 
 
@@ -228,7 +228,7 @@ def test_entries_written_before_kinds_existed_still_replay(tmp_path):
     path = tmp_path / "dead_letter" / "old.ndjson"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"reason": "ConnectError", "at": "2026-09-20T10:00:00+00:00",
-                                "event": {"metadata": {"uid": "x"}}}) + "\n")
+                                "event": {"metadata": {"uid": "x"}}}) + "\n", encoding="utf-8")
     store = DeadLetterStore(path)
     assert store.summary()["by_kind"]["undeliverable"] == 1
     assert store.replay(lambda b: (len(b), []))["delivered"] == 1

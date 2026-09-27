@@ -166,8 +166,17 @@ class OCSFNormalizer:
             except (ValueError, OSError, OverflowError):
                 return None
         text = str(raw_ts).strip()
+        year = datetime.now(timezone.utc).year
+
+        def attempt(fmt: str) -> datetime:
+            # BSD syslog "Sep 20 14:00:15" has no year: read it with this year's, so Feb 29 parses in a
+            # leap year (on its own it is dated 1900, which has no Feb 29; Python 3.13+ warns about that)
+            if "%Y" not in fmt:
+                return datetime.strptime(f"{year} {text}", f"%Y {fmt}")
+            return datetime.strptime(text, fmt)
+
         # the format that read this shape before is tried first (backend/services/timefmt.py)
-        hit = timefmt.parse_first(text, cls.TIME_FORMATS, lambda fmt: datetime.strptime(text, fmt))
+        hit = timefmt.parse_first(text, cls.TIME_FORMATS, attempt)
         return hit[1] if hit else None
 
     @classmethod

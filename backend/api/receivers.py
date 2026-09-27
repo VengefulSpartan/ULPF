@@ -22,7 +22,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from backend.connectors.engine import engine
-from backend.services.ingestion.stream import InboundRecord
+from backend.services.ingestion.stream import InboundRecord, split_lines
 
 router = APIRouter(tags=["Log Receivers (HEC, OTLP, NDJSON)"])
 
@@ -130,7 +130,7 @@ async def hec_raw(request: Request):
     if not _authorised(request):
         return _hec_error("Invalid token", 4, 401)
     body = await _body(request)
-    lines = [l for l in body.split(b"\n") if l.strip()]
+    lines = [l for l in split_lines(body) if l.strip()]
     if not lines:
         return _hec_error("No data", 5, 400)
     hints = {k: v for k, v in (("hostname", request.query_params.get("host")),
@@ -199,9 +199,9 @@ async def ingest_stream(request: Request, source: Optional[str] = None, vendor: 
         try:
             items = list(json.loads(stripped))
         except ValueError:
-            items = [l for l in body.split(b"\n") if l.strip()]
+            items = [l for l in split_lines(body) if l.strip()]
     else:
-        items = [l for l in body.split(b"\n") if l.strip()]
+        items = [l for l in split_lines(body) if l.strip()]
     records: List[InboundRecord] = []
     for item in items:
         item_hints = hints

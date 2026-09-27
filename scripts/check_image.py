@@ -15,12 +15,17 @@ It is Python rather than shell so that it runs the same from Linux, macOS, WSL o
 PowerShell with Docker Desktop. The checks inside the container are shell, because the container
 is always Linux.
 """
+import json
+import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# the docker command; TRACELOG_DOCKER (a JSON list) replaces it, which is how the tests run this
+# script against a stand-in written in Python, the same way on Linux and Windows
+DOCKER = json.loads(os.environ["TRACELOG_DOCKER"]) if os.environ.get("TRACELOG_DOCKER") else ["docker"]
 FORBIDDEN = ["/app/.env", "/app/.git", "/app/data/ulpf.db", "/app/tests", "/app/.venv", "/app/venv",
              "/app/Project outputs", "/app/results", "/app/docs"]
 INSIDE = r'''
@@ -52,7 +57,8 @@ print(f"ok   /api/ml/contract answers with {len(cols)} columns")
 
 
 def docker(*args, check=True, capture=True):
-    p = subprocess.run(["docker", *args], cwd=ROOT, text=True, capture_output=capture)
+    p = subprocess.run([*DOCKER, *args], cwd=ROOT, text=True, capture_output=capture, encoding="utf-8",
+                       errors="replace")
     if check and p.returncode != 0:
         raise RuntimeError(f"docker {' '.join(args[:2])} failed: {(p.stderr or '').strip()[-500:]}")
     return p
@@ -62,7 +68,7 @@ def main(argv=None) -> int:
     args = sys.argv[1:] if argv is None else argv
     image = args[0] if args else "tracelog:latest"
     t0 = time.perf_counter()
-    if subprocess.run(["docker", "build", "-t", image, "."], cwd=ROOT).returncode != 0:
+    if subprocess.run([*DOCKER, "build", "-t", image, "."], cwd=ROOT).returncode != 0:
         print("FAIL the image did not build")
         return 1
     print(f"ok   built {image} in {time.perf_counter() - t0:.0f} s")

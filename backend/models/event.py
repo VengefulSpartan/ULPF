@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 class ProductMetadata(BaseModel):
     vendor_name: str = "Unknown"
@@ -57,7 +57,7 @@ class OCSFEvent(BaseModel):
     severity_id: int = 1 # 1: Info, 2: Low, 3: Medium, 4: High, 5: Critical
     severity: str = "Informational"
     time: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    time_epoch_ms: int = Field(default_factory=lambda: int(datetime.utcnow().timestamp() * 1000))
+    time_epoch_ms: int = Field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp() * 1000))
     
     # Endpoints & network
     src_endpoint: Optional[Endpoint] = None

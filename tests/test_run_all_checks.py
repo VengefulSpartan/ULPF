@@ -41,7 +41,7 @@ def test_two_machines_are_compared_metric_by_metric(tmp_path):
         d = tmp_path / name
         d.mkdir()
         (d / "summary.json").write_text(json.dumps({"machine": {**MACHINE, "hostname": name},
-                                                    "results": _results(rate, dash)}))
+                                                    "results": _results(rate, dash)}), encoding="utf-8")
     text = compare(tmp_path / "old", tmp_path / "new")
     assert "| Throughput, one process (events/s, median) | 2000 | 5000 | 2.50x |" in text
     assert "| Dashboard figures (ms) | 150.0 | 60.0 | 0.40x |" in text

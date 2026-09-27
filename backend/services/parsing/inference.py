@@ -208,7 +208,10 @@ def as_time(v: Any, allow_epoch: bool = True) -> Optional[str]:
     if allow_epoch and re.fullmatch(r"\d{10}(\.\d+)?|\d{13}|\d{16}|\d{19}", s):
         n = float(s)
         n = n / 1e9 if n > 1e17 else n / 1e6 if n > 1e14 else n / 1e3 if n > 1e11 else n
-        dt = datetime.fromtimestamp(n, tz=timezone.utc)
+        try:
+            dt = datetime.fromtimestamp(n, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):   # the C library's range differs between Linux and Windows
+            return None
         return dt.isoformat() if _plausible(dt) else None
     s2 = re.sub(r"\s+", " ", s)
     # the format that read this shape of timestamp before is tried first (backend/services/timefmt.py)
@@ -217,10 +220,12 @@ def as_time(v: Any, allow_epoch: bool = True) -> Optional[str]:
         dt = hit[1]
         dt = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc).isoformat() if _plausible(dt) else None
-    hit = timefmt.parse_first(s2, _YEARLESS, lambda fmt: datetime.strptime(s2, fmt))
+    # no year in the text: read it with this year's, so Feb 29 parses in a leap year (read on its
+    # own it would be dated 1900, which has no Feb 29, and Python 3.13+ warns about exactly that)
+    now = datetime.now(timezone.utc)
+    hit = timefmt.parse_first(s2, _YEARLESS, lambda fmt: datetime.strptime(f"{now.year} {s2}", f"%Y {fmt}"))
     if hit:
-        now = datetime.now(timezone.utc)
-        dt = hit[1].replace(year=now.year, tzinfo=timezone.utc)
+        dt = hit[1].replace(tzinfo=timezone.utc)
         if dt > now + timedelta(days=2):  # a December line read in January
             dt = dt.replace(year=now.year - 1)
         return dt.isoformat()

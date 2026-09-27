@@ -54,7 +54,8 @@ BILLION_PER_DAY = 1_000_000_000 / 86_400        # 11,574 events/s
 # ---------------------------------------------------------------------------------------------------------
 def _run_text(cmd: List[str]) -> str:
     try:
-        return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=30).stdout.strip()
+        return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=30,
+                              encoding="utf-8", errors="replace").stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""
 
@@ -66,7 +67,7 @@ def machine() -> Dict[str, Any]:
     info["wsl"] = "microsoft" in platform.release().lower()
     cpuinfo = Path("/proc/cpuinfo")
     if cpuinfo.exists():
-        text = cpuinfo.read_text(errors="replace")
+        text = cpuinfo.read_text(errors="replace", encoding="utf-8")
         m = re.search(r"^model name\s*:\s*(.+)$", text, re.M)
         info["cpu"] = m.group(1).strip() if m else platform.processor()
         cores = {(p, c) for p, c in re.findall(r"physical id\s*:\s*(\d+).*?core id\s*:\s*(\d+)", text, re.S)}
@@ -80,16 +81,16 @@ def machine() -> Dict[str, Any]:
         info["cpu"] = platform.processor()
     meminfo = Path("/proc/meminfo")
     if meminfo.exists():
-        m = re.search(r"MemTotal:\s*(\d+) kB", meminfo.read_text())
+        m = re.search(r"MemTotal:\s*(\d+) kB", meminfo.read_text(encoding="utf-8"))
         info["memory_gb"] = round(int(m.group(1)) / 1024 / 1024, 1) if m else None
     elif sys.platform == "darwin":
         info["memory_gb"] = round(int(_run_text(["sysctl", "-n", "hw.memsize"]) or 0) / 1024 ** 3, 1)
     info["windows_native"] = sys.platform == "win32"
     ac = list(Path("/sys/class/power_supply").glob("A*/online")) if Path("/sys/class/power_supply").exists() else []
     if sys.platform != "win32":
-        info["on_mains_power"] = (ac[0].read_text().strip() == "1") if ac else None
+        info["on_mains_power"] = (ac[0].read_text(encoding="utf-8").strip() == "1") if ac else None
     gov = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
-    info["cpu_governor"] = gov.read_text().strip() if gov.exists() else None
+    info["cpu_governor"] = gov.read_text(encoding="utf-8").strip() if gov.exists() else None
     info["repo_on_windows_drive"] = str(ROOT).startswith("/mnt/")
     info["git_commit"] = _run_text(["git", "rev-parse", "--short", "HEAD"])
     info["git_uncommitted_files"] = len([l for l in _run_text(["git", "status", "--porcelain"]).splitlines() if l])
@@ -173,12 +174,15 @@ class Check:
         print(f"  running {name}: {shown}", flush=True)
         t0 = time.perf_counter()
         try:
+            # the children write UTF-8 and it is read back as UTF-8, whatever the machine's locale (cp1252 on
+            # Windows would fail on the first non-ASCII character a check prints)
             p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=timeout,
-                               env={**os.environ, **(env or {})})
+                               env={**os.environ, "PYTHONIOENCODING": "utf-8", **(env or {})},
+                               encoding="utf-8", errors="replace")
             code, stdout, stderr = p.returncode, p.stdout, p.stderr
         except subprocess.TimeoutExpired as exc:
             code, stdout, stderr = -1, exc.stdout or "", f"timed out after {timeout} s"
-            stdout = stdout.decode() if isinstance(stdout, bytes) else stdout
+            stdout = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else stdout
         seconds = round(time.perf_counter() - t0, 1)
         (self.out / log).write_text(stdout + ("\n--- stderr ---\n" + stderr if stderr.strip() else ""),
                                     encoding="utf-8")
@@ -443,7 +447,7 @@ def summary_md(info: Dict[str, Any], results: List[Dict[str, Any]], started: str
 
 
 def compare(a: Path, b: Path) -> str:
-    A, B = (json.loads((p / "summary.json").read_text()) for p in (a, b))
+    A, B = (json.loads((p / "summary.json").read_text(encoding="utf-8")) for p in (a, b))
 
     def get(s, name, *path):
         r = next((x for x in s["results"] if x["name"] == name), None)

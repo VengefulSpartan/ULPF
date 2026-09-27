@@ -18,7 +18,7 @@ SWAGGER = ROOT / "backend" / "static" / "swagger-ui"
 
 
 def test_dashboard_sends_no_usage_statistics():
-    config = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text())
+    config = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
     assert config["browser"]["gatherUsageStats"] is False
 
 
@@ -33,7 +33,7 @@ def test_api_docs_load_nothing_from_outside():
 
 
 def test_swagger_ui_files_are_the_pinned_upstream_files():
-    recorded = dict(reversed(line.split()) for line in (SWAGGER / "VERSION.txt").read_text().splitlines()
+    recorded = dict(reversed(line.split()) for line in (SWAGGER / "VERSION.txt").read_text(encoding="utf-8").splitlines()
                     if re.fullmatch(r"[0-9a-f]{64}  \S+", line))
     assert recorded
     for name, digest in recorded.items():

@@ -1,0 +1,26 @@
+# Line endings are the same on every machine: LF in the repository and LF in every checkout.
+#
+# git for Windows checks text files out with CRLF by default (core.autocrlf=true). Then a shell
+# script copied into a Linux container fails on its first line ("/bin/sh^M"), Suricata reads its
+# rules with a CR on the end, and the pinned hash of the vendored Swagger UI no longer matches.
+# tests/test_portability.py checks the rules below. After pulling this file into an existing
+# Windows checkout, run once:  git rm -r --cached . -q && git reset --hard
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF, which cmd.exe expects
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Byte-exact files: a vendored bundle whose SHA-256 is pinned, and log samples whose bytes are hashed
+backend/static/swagger-ui/** -text
+data/samples/** -text
+
+# Binaries: never converted, never diffed as text
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.parquet binary
+*.gz binary
+*.zip binary
+*.db binary

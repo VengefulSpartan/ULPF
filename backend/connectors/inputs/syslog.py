@@ -11,7 +11,7 @@ import ssl
 from typing import Callable, Dict, List, Optional
 
 from backend.connectors.config import SyslogInput
-from backend.services.ingestion.stream import InboundRecord
+from backend.services.ingestion.stream import InboundRecord, split_lines
 
 logger = logging.getLogger("tracelog.inputs.syslog")
 Submit = Callable[[List[InboundRecord]], None]
@@ -42,7 +42,7 @@ class _UdpProtocol(asyncio.DatagramProtocol):
         # RFC 5426 carries one message per datagram; some relays batch several, one per line.
         parts = [data]
         if b"\n" in data.rstrip(b"\n"):
-            lines = [l for l in data.split(b"\n") if l.strip()]
+            lines = [l for l in split_lines(data) if l.strip()]
             if len(lines) > 1 and all(l.startswith(b"<") for l in lines):
                 parts = lines
         recs = [InboundRecord(raw=p, transport="syslog-udp", input_name=self.cfg.name, peer_ip=addr[0],
@@ -88,7 +88,9 @@ class SyslogStreamParser:
                     self.buf = self.buf[self.max:]
                     continue
                 break
-            out.append(self.buf[:idx])
+            # an LF-framed message keeps its terminator (and the CR before it, if any), so the writer
+            # records LF or CRLF instead of archiving a stray CR at the end of the message
+            out.append(self.buf[:idx + 1] if self.buf[idx:idx + 1] == b"\n" else self.buf[:idx])
             self.buf = self.buf[idx + 1:]
         return [m for m in out if m.strip()]
 

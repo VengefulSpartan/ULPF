@@ -12,7 +12,8 @@ transaction instead of a transaction per line.
 import logging
 from typing import Any, Dict, Iterable, List, Union
 
-from backend.services.ingestion.stream import FixedSource, InboundRecord, StoredEvent, StreamIngestor, decode_raw
+from backend.services.ingestion.stream import (FixedSource, InboundRecord, StoredEvent, StreamIngestor, decode_raw,
+                                               split_lines)
 from backend.services.parsing.csvheader import header_of
 
 logger = logging.getLogger("tracelog.pipeline")
@@ -110,8 +111,4 @@ def split_upload(content: bytes) -> List[bytes]:
     records whether it was LF or CRLF. Nothing is decoded here: decoding is the writer's job, and it
     never replaces a byte.
     """
-    parts = content.split(b"\n")
-    lines = [part + b"\n" for part in parts[:-1]]
-    if parts[-1]:
-        lines.append(parts[-1])          # a last line with no terminator
-    return lines
+    return split_lines(content)

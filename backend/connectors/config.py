@@ -157,7 +157,7 @@ def load_config(path: Optional[str] = None) -> TracelogConfig:
     p = Path(path)
     if not p.exists():
         return TracelogConfig()
-    raw = yaml.safe_load(p.read_text()) or {}
+    raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     raw = raw.get("tracelog", raw)
     outputs = []
     for o in raw.get("outputs", []) or []:

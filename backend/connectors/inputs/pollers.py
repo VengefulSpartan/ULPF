@@ -16,7 +16,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from backend.connectors.config import FileInput, KafkaInput as KafkaInputConfig
 from backend.connectors.inputs.syslog import InputStats
-from backend.services.ingestion.stream import InboundRecord, decode_raw
+from backend.services.ingestion.stream import InboundRecord, decode_raw, split_lines
 from backend.services.parsing.csvheader import header_of
 
 logger = logging.getLogger("tracelog.inputs")
@@ -37,14 +37,14 @@ class FileTailInput(threading.Thread):
 
     def _load(self) -> Dict[str, Dict[str, int]]:
         try:
-            return json.loads(self.state_path.read_text())
+            return json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
 
     def _save(self) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.offsets))
+        tmp.write_text(json.dumps(self.offsets), encoding="utf-8")
         os.replace(tmp, self.state_path)
 
     def _csv_header(self, path: str, inode: int) -> Optional[dict]:
@@ -59,9 +59,10 @@ class FileTailInput(threading.Thread):
                 head = fh.read(64 * 1024)
         except OSError:
             return None
-        lines = [decode_raw(l)[0] for l in head.split(b"\n")[:3]]
-        if len(lines) < 3:  # fewer than two complete lines so far
+        parts = head.split(b"\n")
+        if len(parts) < 3:  # fewer than two complete lines so far
             return None
+        lines = [decode_raw(p + b"\n")[0] for p in parts[:2]]   # an LF or CRLF line, without its terminator
         header = header_of(lines[0], lines[1])
         self.headers[path] = (inode, header)
         return header
@@ -88,7 +89,7 @@ class FileTailInput(threading.Thread):
                 end = chunk.rfind(b"\n")
                 if end < 0:
                     continue  # wait for the line to be completed
-                raw_lines = chunk[: end + 1].split(b"\n")
+                raw_lines = split_lines(chunk[: end + 1])   # each keeps its LF or CRLF for the writer to record
                 header = self._csv_header(path, st.st_ino)
                 records = []
                 for i, l in enumerate(raw_lines):

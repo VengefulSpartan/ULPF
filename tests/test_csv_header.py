@@ -108,11 +108,11 @@ def test_an_upload_keeps_the_header_line_and_reads_the_rows_by_name(isolated_db)
 
 def test_a_tailed_file_uses_its_header_also_after_a_restart(isolated_db, tmp_path):
     log = tmp_path / "export.csv"
-    log.write_text(HEADER + "\n" + ROWS[0] + "\n")
+    log.write_text(HEADER + "\n" + ROWS[0] + "\n", encoding="utf-8")
     cfg = FileInput(name="csv-export", paths=[str(log)], start_at="beginning")
     ingest = StreamIngestor().ingest
     FileTailInput(cfg, ingest, str(tmp_path / "state")).poll_once()
-    with log.open("a") as fh:
+    with log.open("a", encoding="utf-8") as fh:
         fh.write(ROWS[1] + "\n")
     FileTailInput(cfg, ingest, str(tmp_path / "state")).poll_once()   # a new process resumes mid-file
     rows = events(isolated_db)

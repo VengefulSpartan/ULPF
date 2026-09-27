@@ -150,13 +150,13 @@ class DeadLetterStore:
     # ---- replay ---------------------------------------------------------------------------
     def _read_offset(self) -> int:
         try:
-            return int(self.offset_path.read_text().strip() or 0)
+            return int(self.offset_path.read_text(encoding="utf-8").strip() or 0)
         except (OSError, ValueError):
             return 0
 
     def _write_offset(self, n: int) -> None:
         tmp = self.offset_path.with_suffix(".tmp")
-        tmp.write_text(str(n))
+        tmp.write_text(str(n), encoding="utf-8")
         os.replace(tmp, self.offset_path)
 
     def _claim(self) -> Optional[Path]:

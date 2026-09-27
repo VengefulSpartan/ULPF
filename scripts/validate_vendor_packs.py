@@ -32,7 +32,7 @@ def iter_files(paths):
 def main(paths):
     grand = Counter()
     for path in iter_files(paths):
-        lines = [l for l in path.read_text(errors="replace").splitlines() if l.strip()]
+        lines = [l for l in path.read_text(errors="replace", encoding="utf-8").splitlines() if l.strip()]
         if not lines:
             continue
         parsers, classes, endpoints = Counter(), Counter(), 0
