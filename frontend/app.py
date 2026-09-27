@@ -39,19 +39,19 @@ from frontend.views.settings_page import render_settings
 with st.sidebar:
     st.markdown(
         """
-        <div style="padding: 12px 4px 16px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 15px;">
-            <div style="display:flex; align-items:center; gap: 12px;">
-                <div style="background: linear-gradient(135deg, #0077B6 0%, #123B5D 100%); width: 40px; height: 40px; border-radius: 8px; display:flex; align-items:center; justify-content:center; font-size:1.3rem; box-shadow: 0 4px 12px rgba(0, 119, 182, 0.35); border: 1px solid rgba(56, 189, 248, 0.4);">
+        <div style="padding: 10px 4px 14px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 14px;">
+            <div style="display:flex; align-items:center; gap: 10px;">
+                <div style="background: #102337; width: 36px; height: 36px; border-radius: 6px; display:flex; align-items:center; justify-content:center; font-size:1.15rem; border: 1px solid #1E3A5F;">
                     🛡️
                 </div>
                 <div>
-                    <div style="font-size: 1.35rem; font-weight: 800; letter-spacing: 0.8px; color: #FFFFFF; line-height: 1.1;">TRACELOG</div>
-                    <div style="font-size: 0.7rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Universal Log Pre-processing</div>
+                    <div style="font-size: 1.25rem; font-weight: 800; letter-spacing: 0.5px; color: #FFFFFF; line-height: 1.1;">TRACELOG</div>
+                    <div style="font-size: 0.68rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Universal Log Pre-processing</div>
                 </div>
             </div>
-            <div style="background: rgba(0, 119, 182, 0.15); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 6px 10px; margin-top: 14px; display:flex; align-items:center; gap: 8px;">
-                <span style="width: 7px; height: 7px; border-radius: 50%; background: #4ADE80; box-shadow: 0 0 6px #4ADE80; display: inline-block;"></span>
-                <span style="font-size: 0.72rem; font-weight: 600; color: #38BDF8; letter-spacing: 0.4px;">LOCAL / AIR-GAPPED DEMO</span>
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #1E293B; border-radius: 4px; padding: 4px 8px; margin-top: 10px; display:flex; align-items:center; gap: 6px;">
+                <span style="width: 6px; height: 6px; border-radius: 50%; background: #22C55E; display: inline-block;"></span>
+                <span style="font-size: 0.68rem; font-weight: 600; color: #94A3B8; letter-spacing: 0.3px;">LOCAL / AIR-GAPPED DEMO</span>
             </div>
         </div>
         """,
@@ -61,16 +61,16 @@ with st.sidebar:
     page = st.radio(
         "Navigation",
         [
-            "📊  Overview",
-            "🔌  Sources & Onboarding",
-            "⚡  Parser Studio",
-            "🔄  Processing Pipeline",
-            "🔎  Log Explorer",
-            "🛡️  Integrity & Lineage",
-            "🧬  Correlation & RCA",
-            "📐  Schema Explorer",
-            "🔗  Connectors",
-            "⚙️  Settings"
+            "Overview",
+            "Sources & Onboarding",
+            "Parser Studio",
+            "Processing Pipeline",
+            "Log Explorer",
+            "Integrity & Lineage",
+            "Correlation & RCA",
+            "Schema Explorer",
+            "Connectors",
+            "Settings"
         ],
         label_visibility="collapsed"
     )

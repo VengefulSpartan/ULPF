@@ -159,9 +159,9 @@ textarea {
     border-color: #94A3B8 !important;
 }
 
-/* Sidebar styling - Modern Cyber Operations Command Center */
+/* Sidebar styling - Enterprise Cybersecurity Workspace */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #071524 0%, #0c2035 100%) !important;
+    background-color: #071524 !important;
     border-right: 1px solid #142F4B !important;
 }
 
@@ -169,60 +169,274 @@ textarea {
     color: #E2E8F0;
 }
 
-/* Modern Sidebar Navigation Menu - Eliminate ugly radio circles */
+/* Sidebar Radio Container & Spacing */
 [data-testid="stSidebar"] [data-testid="stRadio"] > div {
-    gap: 4px !important;
+    gap: 1px !important;
     padding: 0 !important;
 }
 
+/* Eliminate ALL native radio circles, marks, bullets, and inputs */
+[data-testid="stSidebar"] [data-testid="stRadio"] label > div:first-child,
+[data-testid="stSidebar"] [data-testid="stRadio"] label > div:first-of-type,
+[data-testid="stSidebar"] [data-testid="stRadio"] label [data-baseweb="radio"] > div:first-child,
+[data-testid="stSidebar"] [data-testid="stRadio"] label [data-baseweb="radio"] > div:first-of-type,
+[data-testid="stSidebar"] [data-testid="stRadio"] label input[type="radio"],
+[data-testid="stSidebar"] [data-testid="stRadio"] label input[type="radio"] + div,
+[data-testid="stSidebar"] [data-testid="stRadio"] label input[type="radio"] ~ div,
+[data-testid="stSidebar"] [data-testid="stRadio"] label div[class*="RadioMark"],
+[data-testid="stSidebar"] [data-testid="stRadio"] label div[class*="radioMark"],
+[data-testid="stSidebar"] [data-testid="stRadio"] label div[class*="Circle"],
+[data-testid="stSidebar"] [data-testid="stRadio"] label div[class*="circle"],
+[data-testid="stSidebar"] [data-testid="stRadio"] label svg[class*="Radio"],
+[data-testid="stSidebar"] [data-testid="stRadio"] label svg[class*="radio"] {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* Nav Item Layout */
 [data-testid="stSidebar"] [data-testid="stRadio"] label {
     display: flex !important;
     align-items: center !important;
-    padding: 9px 14px !important;
-    border-radius: 6px !important;
-    margin-bottom: 2px !important;
+    padding: 7px 12px !important;
+    margin-bottom: 1px !important;
     cursor: pointer !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    border: 1px solid transparent !important;
+    transition: background-color 0.15s ease, color 0.15s ease !important;
+    border: none !important;
+    border-left: 3px solid transparent !important;
+    border-radius: 0 4px 4px 0 !important;
     background-color: transparent !important;
 }
 
-/* Hide the native radio circles completely */
-[data-testid="stSidebar"] [data-testid="stRadio"] label > div:first-child {
-    display: none !important;
+[data-testid="stSidebar"] [data-testid="stRadio"] label > div:last-child {
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
-/* Text in nav items */
+/* Typography in Nav Items */
 [data-testid="stSidebar"] [data-testid="stRadio"] label div p {
-    font-size: 0.88rem !important;
+    display: flex !important;
+    align-items: center !important;
+    font-size: 0.84rem !important;
     font-weight: 500 !important;
     color: #94A3B8 !important;
-    letter-spacing: 0.2px !important;
+    letter-spacing: 0.15px !important;
     margin: 0 !important;
+    line-height: 1.4 !important;
     transition: color 0.15s ease !important;
 }
 
 /* Hover state */
-[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
-    background-color: rgba(255, 255, 255, 0.06) !important;
-    border-color: rgba(255, 255, 255, 0.08) !important;
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover:not(:has(input:checked)) {
+    background-color: rgba(255, 255, 255, 0.04) !important;
 }
 
 [data-testid="stSidebar"] [data-testid="stRadio"] label:hover div p {
-    color: #F8FAFC !important;
+    color: #F1F5F9 !important;
 }
 
-/* Active Selected Item - Sleek Glowing Cyber Pill */
+/* Active Selected Item - Subtle Dark Blue with Left Accent Indicator (no excessive glow) */
 [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
-    background: linear-gradient(90deg, rgba(0, 119, 182, 0.3) 0%, rgba(18, 59, 93, 0.15) 100%) !important;
-    border: 1px solid rgba(56, 189, 248, 0.35) !important;
-    border-left: 4px solid #38BDF8 !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    background-color: rgba(56, 189, 248, 0.08) !important;
+    border: none !important;
+    border-left: 3px solid #38BDF8 !important;
+    border-radius: 0 4px 4px 0 !important;
+    box-shadow: none !important;
 }
 
 [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) div p {
-    color: #FFFFFF !important;
-    font-weight: 700 !important;
+    color: #F8FAFC !important;
+    font-weight: 600 !important;
+}
+
+/* Navigation Section Group Headers */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"]::before {
+    content: "WORKSPACE";
+    display: block;
+    width: 100%;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #64748B;
+    text-transform: uppercase;
+    padding: 6px 12px 4px 12px;
+    margin-bottom: 2px;
+    pointer-events: none;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(6) {
+    margin-top: 18px !important;
+    position: relative !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(6)::before {
+    content: "SECURITY";
+    position: absolute;
+    top: -16px;
+    left: 12px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #64748B;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(8) {
+    margin-top: 18px !important;
+    position: relative !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(8)::before {
+    content: "DATA";
+    position: absolute;
+    top: -16px;
+    left: 12px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #64748B;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(10) {
+    margin-top: 18px !important;
+    position: relative !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(10)::before {
+    content: "SYSTEM";
+    position: absolute;
+    top: -16px;
+    left: 12px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #64748B;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+/* Professional Monochrome Outline Navigation Icons (Replacing Emojis) */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label p::before {
+    content: "";
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    margin-right: 10px;
+    flex-shrink: 0;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    opacity: 0.8;
+    transition: opacity 0.15s ease;
+}
+
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:has(input:checked) p::before {
+    opacity: 1;
+}
+
+/* 1. Overview */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(1) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%227%22%20height%3D%229%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%221%22/%3E%3Crect%20width%3D%227%22%20height%3D%225%22%20x%3D%2214%22%20y%3D%223%22%20rx%3D%221%22/%3E%3Crect%20width%3D%227%22%20height%3D%229%22%20x%3D%2214%22%20y%3D%2212%22%20rx%3D%221%22/%3E%3Crect%20width%3D%227%22%20height%3D%225%22%20x%3D%223%22%20y%3D%2216%22%20rx%3D%221%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(1):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(1):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%227%22%20height%3D%229%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%221%22/%3E%3Crect%20width%3D%227%22%20height%3D%225%22%20x%3D%2214%22%20y%3D%223%22%20rx%3D%221%22/%3E%3Crect%20width%3D%227%22%20height%3D%229%22%20x%3D%2214%22%20y%3D%2212%22%20rx%3D%221%22/%3E%3Crect%20width%3D%227%22%20height%3D%225%22%20x%3D%223%22%20y%3D%2216%22%20rx%3D%221%22/%3E%3C/svg%3E") !important;
+}
+
+/* 2. Sources & Onboarding */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(2) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%2022v-5%22/%3E%3Cpath%20d%3D%22M9%208V2%22/%3E%3Cpath%20d%3D%22M15%202v6%22/%3E%3Cpath%20d%3D%22M18%208v5a6%206%200%200%201-12%200V8z%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(2):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(2):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%2022v-5%22/%3E%3Cpath%20d%3D%22M9%208V2%22/%3E%3Cpath%20d%3D%22M15%202v6%22/%3E%3Cpath%20d%3D%22M18%208v5a6%206%200%200%201-12%200V8z%22/%3E%3C/svg%3E") !important;
+}
+
+/* 3. Parser Studio */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(3) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%224%2017%2010%2011%204%205%22/%3E%3Cline%20x1%3D%2212%22%20x2%3D%2220%22%20y1%3D%2219%22%20y2%3D%2219%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(3):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(3):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%224%2017%2010%2011%204%205%22/%3E%3Cline%20x1%3D%2212%22%20x2%3D%2220%22%20y1%3D%2219%22%20y2%3D%2219%22/%3E%3C/svg%3E") !important;
+}
+
+/* 4. Processing Pipeline */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(4) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223%22/%3E%3Cline%20x1%3D%223%22%20x2%3D%229%22%20y1%3D%2212%22%20y2%3D%2212%22/%3E%3Cline%20x1%3D%2215%22%20x2%3D%2221%22%20y1%3D%2212%22%20y2%3D%2212%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(4):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(4):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223%22/%3E%3Cline%20x1%3D%223%22%20x2%3D%229%22%20y1%3D%2212%22%20y2%3D%2212%22/%3E%3Cline%20x1%3D%2215%22%20x2%3D%2221%22%20y1%3D%2212%22%20y2%3D%2212%22/%3E%3C/svg%3E") !important;
+}
+
+/* 5. Log Explorer */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(5) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2211%22%20cy%3D%2211%22%20r%3D%228%22/%3E%3Cline%20x1%3D%2221%22%20x2%3D%2216.65%22%20y1%3D%2221%22%20y2%3D%2216.65%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(5):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(5):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2211%22%20cy%3D%2211%22%20r%3D%228%22/%3E%3Cline%20x1%3D%2221%22%20x2%3D%2216.65%22%20y1%3D%2221%22%20y2%3D%2216.65%22/%3E%3C/svg%3E") !important;
+}
+
+/* 6. Integrity & Lineage */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(6) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%2013c0%205-3.5%207.5-7.66%208.95a1%201%200%200%201-.67-.01C7.5%2020.5%204%2018%204%2013V6a1%201%200%200%201%201-1c2%200%204.5-1.2%206.24-2.72a1.17%201.17%200%200%201%201.52%200C14.51%203.81%2017%205%2019%205a1%201%200%200%201%201%201z%22/%3E%3Cpath%20d%3D%22m9%2012%202%202%204-4%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(6):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(6):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%2013c0%205-3.5%207.5-7.66%208.95a1%201%200%200%201-.67-.01C7.5%2020.5%204%2018%204%2013V6a1%201%200%200%201%201-1c2%200%204.5-1.2%206.24-2.72a1.17%201.17%200%200%201%201.52%200C14.51%203.81%2017%205%2019%205a1%201%200%200%201%201%201z%22/%3E%3Cpath%20d%3D%22m9%2012%202%202%204-4%22/%3E%3C/svg%3E") !important;
+}
+
+/* 7. Correlation & RCA */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(7) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%225%22%20r%3D%223%22/%3E%3Ccircle%20cx%3D%226%22%20cy%3D%2212%22%20r%3D%223%22/%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%2219%22%20r%3D%223%22/%3E%3Cline%20x1%3D%228.59%22%20x2%3D%2215.42%22%20y1%3D%2213.51%22%20y2%3D%2217.49%22/%3E%3Cline%20x1%3D%2215.41%22%20x2%3D%228.59%22%20y1%3D%226.51%22%20y2%3D%2210.49%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(7):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(7):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%225%22%20r%3D%223%22/%3E%3Ccircle%20cx%3D%226%22%20cy%3D%2212%22%20r%3D%223%22/%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%2219%22%20r%3D%223%22/%3E%3Cline%20x1%3D%228.59%22%20x2%3D%2215.42%22%20y1%3D%2213.51%22%20y2%3D%2217.49%22/%3E%3Cline%20x1%3D%2215.41%22%20x2%3D%228.59%22%20y1%3D%226.51%22%20y2%3D%2210.49%22/%3E%3C/svg%3E") !important;
+}
+
+/* 8. Schema Explorer */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(8) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cellipse%20cx%3D%2212%22%20cy%3D%225%22%20rx%3D%229%22%20ry%3D%223%22/%3E%3Cpath%20d%3D%22M3%205V19A9%203%200%200%200%2021%2019V5%22/%3E%3Cpath%20d%3D%22M3%2012A9%203%200%200%200%2021%2012%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(8):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(8):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cellipse%20cx%3D%2212%22%20cy%3D%225%22%20rx%3D%229%22%20ry%3D%223%22/%3E%3Cpath%20d%3D%22M3%205V19A9%203%200%200%200%2021%2019V5%22/%3E%3Cpath%20d%3D%22M3%2012A9%203%200%200%200%2021%2012%22/%3E%3C/svg%3E") !important;
+}
+
+/* 9. Connectors */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(9) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M9%2017H7A5%205%200%200%201%207%207h2%22/%3E%3Cpath%20d%3D%22M15%207h2a5%205%200%201%201%200%2010h-2%22/%3E%3Cline%20x1%3D%228%22%20x2%3D%2216%22%20y1%3D%2212%22%20y2%3D%2212%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(9):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(9):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M9%2017H7A5%205%200%200%201%207%207h2%22/%3E%3Cpath%20d%3D%22M15%207h2a5%205%200%201%201%200%2010h-2%22/%3E%3Cline%20x1%3D%228%22%20x2%3D%2216%22%20y1%3D%2212%22%20y2%3D%2212%22/%3E%3C/svg%3E") !important;
+}
+
+/* 10. Settings */
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(10) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223%22/%3E%3Cpath%20d%3D%22M19.4%2015a1.65%201.65%200%200%200%20.33%201.82l.06.06a2%202%200%200%201%200%202.83%202%202%200%200%201-2.83%200l-.06-.06a1.65%201.65%200%200%200-1.82-.33%201.65%201.65%200%200%200-1%201.51V21a2%202%200%200%201-2%202%202%202%200%200%201-2-2v-.09A1.65%201.65%200%200%200%209%2019.4a1.65%201.65%200%200%200-1.82.33l-.06.06a2%202%200%200%201-2.83%200%202%202%200%200%201%200-2.83l.06-.06a1.65%201.65%200%200%200%20.33-1.82%201.65%201.65%200%200%200-1.51-1H3a2%202%200%200%201-2-2%202%202%200%200%201%202-2h.09A1.65%201.65%200%200%200%204.6%209a1.65%201.65%200%200%200-.33-1.82l-.06-.06a2%202%200%200%201%200-2.83%202%202%200%200%201%202.83%200l.06.06a1.65%201.65%200%200%200%201.82.33H9a1.65%201.65%200%200%200%201-1.51V3a2%202%200%200%201%202-2%202%202%200%200%201%202%202v.09a1.65%201.65%200%200%200%201%201.51%201.65%201.65%200%200%200%201.82-.33l.06-.06a2%202%200%200%201%202.83%200%202%202%200%200%201%200%202.83l-.06.06a1.65%201.65%200%200%200-.33%201.82V9a1.65%201.65%200%200%200%201.51%201H21a2%202%200%200%201%202%202%202%202%200%200%201-2%202h-.09a1.65%201.65%200%200%200-1.51%201z%22/%3E%3C/svg%3E") !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(10):hover p::before,
+[data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > label:nth-of-type(10):has(input:checked) p::before {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223%22/%3E%3Cpath%20d%3D%22M19.4%2015a1.65%201.65%200%200%200%20.33%201.82l.06.06a2%202%200%200%201%200%202.83%202%202%200%200%201-2.83%200l-.06-.06a1.65%201.65%200%200%200-1.82-.33%201.65%201.65%200%200%200-1%201.51V21a2%202%200%200%201-2%202%202%202%200%200%201-2-2v-.09A1.65%201.65%200%200%200%209%2019.4a1.65%201.65%200%200%200-1.82.33l-.06.06a2%202%200%200%201-2.83%200%202%202%200%200%201%200-2.83l.06-.06a1.65%201.65%200%200%200%20.33-1.82%201.65%201.65%200%200%200-1.51-1H3a2%202%200%200%201-2-2%202%202%200%200%201%202-2h.09A1.65%201.65%200%200%200%204.6%209a1.65%201.65%200%200%200-.33-1.82l-.06-.06a2%202%200%200%201%200-2.83%202%202%200%200%201%202.83%200l.06.06a1.65%201.65%200%200%200%201.82.33H9a1.65%201.65%200%200%200%201-1.51V3a2%202%200%200%201%202-2%202%202%200%200%201%202%202v.09a1.65%201.65%200%200%200%201%201.51%201.65%201.65%200%200%200%201.82-.33l.06-.06a2%202%200%200%201%202.83%200%202%202%200%200%201%200%202.83l-.06.06a1.65%201.65%200%200%200-.33%201.82V9a1.65%201.65%200%200%200%201.51%201H21a2%202%200%200%201%202%202%202%202%200%200%201-2%202h-.09a1.65%201.65%200%200%200-1.51%201z%22/%3E%3C/svg%3E") !important;
 }
 
 /* Metric Cards */
