@@ -59,7 +59,7 @@ def render_settings():
 
     st.markdown("---")
     st.markdown("##### Database Maintenance")
-    if st.button("🧹 Reset Database & Flush Sample Data", type="secondary"):
+    if st.button("Reset Database & Flush Sample Data", type="secondary"):
         with db.get_connection() as conn:
             conn.execute("DELETE FROM integrity_ledger;")
             conn.execute("DELETE FROM normalized_events;")

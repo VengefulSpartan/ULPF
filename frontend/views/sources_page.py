@@ -7,7 +7,7 @@ def render_sources():
     st.markdown("## Sources & Onboarding")
     st.caption("Manage perimeter network appliances, ingestion channels, and parser associations")
 
-    tab_list, tab_add, tab_test = st.tabs(["Active Sources", "➕ Register New Source", "🧪 Test Ingestion & Normalization"])
+    tab_list, tab_add, tab_test = st.tabs(["Active Sources", "Register New Source", "Test Ingestion & Normalization"])
 
     # 1. Active Sources Tab
     with tab_list:
@@ -104,7 +104,7 @@ def render_sources():
             height=100
         )
 
-        if st.button("⚡ Test Ingest & Normalize", type="primary"):
+        if st.button("Test Ingest & Normalize", type="primary"):
             try:
                 res = APIClient.ingest_single(
                     text=sample_text,
@@ -112,7 +112,7 @@ def render_sources():
                     vendor=sel_source["vendor"],
                     product=sel_source["product"]
                 )
-                st.success("✓ Log successfully pre-processed, normalized, and appended to hash ledger!")
+                st.success("Log successfully pre-processed, normalized, and appended to hash ledger!")
                 
                 col_r1, col_r2 = st.columns(2)
                 with col_r1:

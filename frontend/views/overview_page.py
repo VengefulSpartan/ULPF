@@ -53,15 +53,15 @@ def render_overview():
     m1, m2, m3, m4, m5 = st.columns(5)
     revisions = pipe.get("revisions", 0)
     card(m1, "Normalized events", f"{total_events:,}",
-         f"current versions · {revisions:,} re-parsed" if revisions else "OCSF 1.1.0, one per archived line")
+         f"current versions | {revisions:,} re-parsed" if revisions else "OCSF 1.1.0, one per archived line")
     card(m2, "Active sources", f"{active_sources:,}", "devices and forwarders")
     known = parsing.get("known_parser_pct", 0.0)
-    card(m3, "Read by a known parser", f"{known}%" if total_events else "–",
-         f"{parsing.get('vendor_pack', 0):,} vendor packs · {parsing.get('learned', 0):,} learned · "
+    card(m3, "Read by a known parser", f"{known}%" if total_events else "-",
+         f"{parsing.get('vendor_pack', 0):,} vendor packs | {parsing.get('learned', 0):,} learned | "
          f"{parsing.get('generic', 0):,} generic (unverified)",
          "#2E7D32" if known >= 90 else "#B45309" if total_events else "#123B5D")
     valid = conf.get("valid_pct", 0.0)
-    card(m4, "OCSF 1.1.0 conformance", f"{valid}%" if conf.get("checked") else "–",
+    card(m4, "OCSF 1.1.0 conformance", f"{valid}%" if conf.get("checked") else "-",
          f"latest {conf.get('checked', 0):,} events checked against OCSF",
          "#2E7D32" if valid == 100 else "#B91C1C" if conf.get("checked") else "#123B5D")
     ok = pipe.get("consistent", True)

@@ -16,7 +16,7 @@ def render_correlation():
     with col_run:
         st.write("")
         st.write("")
-        run_btn = st.button("⚡ Run RCA Correlation", type="primary", use_container_width=True)
+        run_btn = st.button("Run RCA Correlation", type="primary", use_container_width=True)
 
     incident = APIClient.run_correlation(pivot_ip=pivot_ip if pivot_ip else None)
 
@@ -96,7 +96,7 @@ def render_correlation():
     col_facts, col_inferred = st.columns([1, 1])
 
     with col_facts:
-        st.markdown("##### 🔍 Observed Facts (Verifiable Evidence)")
+        st.markdown("##### Observed Facts (Verifiable Evidence)")
         st.caption("Hard telemetric facts logged directly by appliances, anchored with raw SHA-256 hashes:")
         for idx, f in enumerate(facts):
             st.markdown(
@@ -116,7 +116,7 @@ def render_correlation():
             )
 
     with col_inferred:
-        st.markdown("##### 🧠 Inferred Relationships (Rules that matched)")
+        st.markdown("##### Inferred Relationships (Rules that matched)")
         st.caption("Each rule is listed with the evidence that made it match. A match is not confirmed causation, "
                    "and it carries no probability.")
         inferred = links
@@ -132,7 +132,7 @@ def render_correlation():
                         </div>
                         <ul style="font-size:0.8rem; color:#334155; margin:6px 0 0 0; padding-left:18px;">{evidence}</ul>
                         <div style="font-size:0.85rem; color:#0F172A; margin-top:4px;">
-                            💡 <b>Hypothesis</b>: {inf.get('hypothesis')}
+                            <b>Hypothesis</b>: {inf.get('hypothesis')}
                         </div>
                         <div style="font-size:0.78rem; color:#475569; margin-top:4px;">
                             <b>Analytical Rationale</b>: {inf.get('rationale')}

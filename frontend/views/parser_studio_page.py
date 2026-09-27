@@ -8,8 +8,8 @@ def render_parser_studio():
     st.markdown("## Parser Studio (Zero-Touch Parser Generation)")
     st.caption("USP 1: Autonomous parser inference, candidate generation, multi-sample validation, and approval workflow")
 
-    tab_new, tab_gen, tab_list = st.tabs(["🆕 New log formats", "⚡ Generate & Test Candidate Parser",
-                                          "📂 Parser Registry & Approval"])
+    tab_new, tab_gen, tab_list = st.tabs(["New Log Formats", "Generate & Test Candidate Parser",
+                                          "Parser Registry & Approval"])
 
     with tab_new:
         render_new_formats()
@@ -32,7 +32,7 @@ def render_parser_studio():
         )
         sample_text = st.text_area("Sample Raw Log Lines (1 to N lines)", value=default_samples, height=130)
 
-        if st.button("🔮 Generate Candidate Parser", type="primary"):
+        if st.button("Generate Candidate Parser", type="primary"):
             lines = [l.strip() for l in sample_text.splitlines() if l.strip()]
             if not lines:
                 st.error("Please provide at least one sample line.")
@@ -45,7 +45,7 @@ def render_parser_studio():
                         sample_logs=lines
                     )
                     st.session_state["active_candidate"] = res
-                    st.success(f"✓ Candidate parser generated: {res.get('id')}")
+                    st.success(f"Candidate parser generated: {res.get('id')}")
 
         # If a candidate is active, display rules and test actions
         active = st.session_state.get("active_candidate")
@@ -59,7 +59,7 @@ def render_parser_studio():
             with col_meta2:
                 status_color = "warning" if active.get("status") == "candidate" else "success"
                 st.markdown(f"**Status**: <span class='badge badge-{status_color}'>{active.get('status').upper()}</span>", unsafe_allow_html=True)
-                st.markdown(f"**Tested**: {'✓ Yes' if active.get('tested') else '✗ Untested'}")
+                st.markdown(f"**Tested**: {'Yes' if active.get('tested') else 'Untested'}")
             with col_meta3:
                 st.markdown(f"**Target OCSF Class**: `{active.get('target_ocsf_class')}` (Network Activity)")
 
@@ -72,12 +72,12 @@ def render_parser_studio():
                 st.dataframe(df_map, use_container_width=True, hide_index=True)
 
             st.markdown("##### 3. Candidate Validation Suite")
-            st.info("⚠️ **Strict Approval Policy**: Untested parsers cannot be approved. Run validation against samples to verify parsing accuracy.")
+            st.info("**Strict Approval Policy**: Untested parsers cannot be approved. Run validation against samples to verify parsing accuracy.")
             
             lines = [l.strip() for l in sample_text.splitlines() if l.strip()]
             col_t1, col_t2, col_t3 = st.columns([2, 1, 1])
             with col_t1:
-                if st.button("🧪 Run Validation Test Suite", use_container_width=True):
+                if st.button("Run Validation Test Suite", use_container_width=True):
                     with st.spinner("Testing candidate against sample batch..."):
                         tested_res = APIClient.test_parser(active.get("id"), lines)
                         st.session_state["active_candidate"] = tested_res
@@ -99,7 +99,7 @@ def render_parser_studio():
                 # Sample inspection
                 with st.expander("Inspect Extracted Sample Results"):
                     for idx, sample_res in enumerate(val.get("sample_results", [])):
-                        st.markdown(f"**Sample {idx + 1}**: `{'✓ Passed' if sample_res.get('passed') else '✗ Failed'}`")
+                        st.markdown(f"**Sample {idx + 1}**: `{'Passed' if sample_res.get('passed') else 'Failed'}`")
                         st.code(sample_res.get("sample_log"), language="text")
                         if sample_res.get("extracted_fields"):
                             st.json(sample_res.get("extracted_fields"))
@@ -108,16 +108,16 @@ def render_parser_studio():
             st.markdown("##### 4. Governance & Approval Gate")
             col_app, col_rej, col_sp = st.columns([1, 1, 2])
             with col_app:
-                if st.button("✅ Approve Parser", type="primary", use_container_width=True):
+                if st.button("Approve Parser", type="primary", use_container_width=True):
                     res_app = APIClient.approve_parser(active.get("id"))
                     if "error" in res_app:
                         st.error(f"Approval Blocked: {res_app['error']}")
                     else:
-                        st.success("✓ Candidate approved and promoted to active parsing registry!")
+                        st.success("Candidate approved and promoted to active parsing registry!")
                         st.session_state["active_candidate"] = res_app
                         st.rerun()
             with col_rej:
-                if st.button("❌ Reject Parser", use_container_width=True):
+                if st.button("Reject Parser", use_container_width=True):
                     res_rej = APIClient.reject_parser(active.get("id"))
                     st.warning("Candidate parser rejected.")
                     st.session_state["active_candidate"] = res_rej
