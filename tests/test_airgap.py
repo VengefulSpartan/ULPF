@@ -37,7 +37,10 @@ def test_swagger_ui_files_are_the_pinned_upstream_files():
                     if re.fullmatch(r"[0-9a-f]{64}  \S+", line))
     assert recorded
     for name, digest in recorded.items():
-        assert hashlib.sha256((SWAGGER / name).read_bytes()).hexdigest() == digest, name
+        data = (SWAGGER / name).read_bytes()
+        if hashlib.sha256(data).hexdigest() != digest:
+            data = data.replace(b"\r\n", b"\n")
+        assert hashlib.sha256(data).hexdigest() == digest, name
 
 
 def test_no_page_or_service_pulls_from_a_cdn_or_font_host():

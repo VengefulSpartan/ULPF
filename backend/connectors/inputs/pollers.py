@@ -92,6 +92,8 @@ class FileTailInput(threading.Thread):
                 header = self._csv_header(path, st.st_ino)
                 records = []
                 for i, l in enumerate(raw_lines):
+                    if l.endswith(b"\r"):
+                        l = l[:-1]
                     if not l.strip():
                         continue
                     hints: Dict[str, object] = {"file": path}

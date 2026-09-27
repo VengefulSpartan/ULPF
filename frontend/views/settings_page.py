@@ -63,10 +63,23 @@ def render_settings():
         with db.get_connection() as conn:
             conn.execute("DELETE FROM integrity_ledger;")
             conn.execute("DELETE FROM normalized_events;")
+            try:
+                conn.execute("INSERT INTO raw_search(raw_search) VALUES('delete-all');")
+            except Exception:
+                pass
+            conn.execute("DROP TRIGGER IF EXISTS raw_logs_fts_delete;")
             conn.execute("DELETE FROM raw_logs;")
             conn.execute("DELETE FROM incidents;")
             conn.execute("DELETE FROM audit_tamper_backup;")
             conn.execute("UPDATE sources SET event_count = 0, last_event_at = NULL;")
+            if getattr(settings, "SEARCH_INDEX", True):
+                conn.execute("""CREATE TRIGGER IF NOT EXISTS raw_logs_fts_delete AFTER DELETE ON raw_logs BEGIN
+                    INSERT INTO raw_search (raw_search, rowid, raw_text) VALUES ('delete', old.rowid, old.raw_text);
+                END;""")
             conn.commit()
+            try:
+                conn.execute("VACUUM;")
+            except Exception:
+                pass
         st.success("Database tables flushed. Navigate to Overview to re-seed sample data.")
         st.rerun()

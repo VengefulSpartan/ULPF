@@ -218,6 +218,7 @@ class DeadLetterStore:
     def _replay_file(self, claim: Path, send, batch_size, kinds, limit, p, should_stop) -> bool:
         """Work through the claimed file from the saved offset. Returns True if the run stopped early;
         the claim then stays in place with its offset, and the next replay continues from there."""
+        finished = False
         with claim.open("rb") as fh:
             fh.seek(self._read_offset())
             while True:
@@ -256,5 +257,9 @@ class DeadLetterStore:
                 self.append(keep + refused)
                 self._write_offset(fh.tell())
                 if eof:
-                    self._finish()
-                    return False
+                    finished = True
+                    break
+        if finished:
+            self._finish()
+            return False
+        return False

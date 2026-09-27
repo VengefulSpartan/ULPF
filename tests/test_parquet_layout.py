@@ -53,7 +53,7 @@ def test_security_lake_partitions_and_one_class_per_object(tmp_path):
     files = sorted((tmp_path / "lake").rglob("*.parquet"))
     assert len(files) == 3                                    # 4001 and 3002 on day one, 2004 on day two
     for path in files:
-        match = SECURITY_LAKE_PATH.search(str(path))
+        match = SECURITY_LAKE_PATH.search(path.as_posix())
         assert match, f"{path} is not laid out the way Security Lake reads"
         day, class_in_name = match.groups()
         table = pq.read_table(path)
@@ -85,7 +85,7 @@ def test_the_default_layout_is_unchanged(tmp_path):
     s.send(events())
     files = list((tmp_path / "lake").rglob("*.parquet"))
     assert len(files) == 3
-    assert all(re.search(r"class_uid=\d+/event_day=\d{8}/part-[^/]+\.parquet$", str(p)) for p in files)
+    assert all(re.search(r"class_uid=\d+/event_day=\d{8}/part-[^/]+\.parquet$", p.as_posix()) for p in files)
 
 
 def test_a_security_lake_output_refuses_settings_it_cannot_honour(tmp_path):
