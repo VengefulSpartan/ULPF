@@ -39,6 +39,25 @@ class Settings(BaseSettings):
     # scripts/run_baseline.py run it on demand either way.
     BASELINE_EVERY_MINUTES: int = 0
 
+    # Which part of TRACELOG this process is (docs/SERVICES.md). "all": everything in one process, as
+    # `python run_app.py` runs it. "collector": the receivers, the one writer that archives and chains
+    # every line, the outputs, and every request that changes data. "query": the read-only API behind
+    # searches, verification, reports and analytics, which cannot change the archive.
+    SERVICE_ROLE: str = "all"
+
+    # Open the database read-only (the query and detector services): SQLite refuses every write.
+    DB_READ_ONLY: bool = False
+
+    # Where the detector service sends its findings, and the token if the collector's HTTP inputs
+    # require one. The collector writes them into the chain, so there is still one writer.
+    COLLECTOR_URL: str = "http://127.0.0.1:8000"
+    COLLECTOR_TOKEN: str = ""
+
+    # When the API does not answer, the dashboard runs the backend in its own process instead. Right
+    # for one laptop; off in the containers, where the dashboard has no database and a second writer
+    # would fork the hash chain.
+    DASHBOARD_DIRECT_MODE: bool = True
+
     # Server settings
     BACKEND_HOST: str = "127.0.0.1"
     BACKEND_PORT: int = 8000
@@ -46,7 +65,11 @@ class Settings(BaseSettings):
 
 SUPPORTED_OCSF_VERSIONS = ("1.1.0", "1.2.0", "1.3.0")
 
+SERVICE_ROLES = ("all", "collector", "query")
+
 settings = Settings()
+if settings.SERVICE_ROLE not in SERVICE_ROLES:
+    raise ValueError(f"SERVICE_ROLE={settings.SERVICE_ROLE!r}; use one of {', '.join(SERVICE_ROLES)}")
 if settings.OCSF_VERSION not in SUPPORTED_OCSF_VERSIONS:
     raise ValueError(
         f"OCSF_VERSION={settings.OCSF_VERSION!r} is not one TRACELOG emits. "

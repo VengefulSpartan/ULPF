@@ -1,6 +1,5 @@
 import streamlit as st
 from backend.config import settings
-from backend.services.storage.db import db
 
 def render_settings():
     st.markdown("## System Settings & Environment")
@@ -45,7 +44,7 @@ def render_settings():
     st.markdown(
         f"""
         - **Storage Engine**: SQLite 3 with Write-Ahead Logging (`WAL` mode)
-        - **Database Path**: `{settings.DB_PATH}`
+        - **Database Path**: `{settings.DB_PATH if settings.DASHBOARD_DIRECT_MODE else "on the collector service (volume tracelog-data)"}`
         - **Schema Version**: `1.0.0`
         - **API Binding**: `{settings.BACKEND_HOST}:{settings.BACKEND_PORT}`
         - **Secrets Policy**: Zero API keys or sensitive credentials exposed in frontend
@@ -59,7 +58,13 @@ def render_settings():
 
     st.markdown("---")
     st.markdown("##### Database Maintenance")
-    if st.button("🧹 Reset Database & Flush Sample Data", type="secondary"):
+    if not settings.DASHBOARD_DIRECT_MODE:
+        # the containers: the dashboard has no database, and only the collector writes to it
+        st.button("🧹 Reset Database & Flush Sample Data", type="secondary", disabled=True)
+        st.caption("The database belongs to the collector service. To start again from an empty archive: "
+                   "`docker compose down -v` then `docker compose up -d`.")
+    elif st.button("🧹 Reset Database & Flush Sample Data", type="secondary"):
+        from backend.services.storage.db import db
         with db.get_connection() as conn:
             conn.execute("DELETE FROM integrity_ledger;")
             conn.execute("DELETE FROM normalized_events;")

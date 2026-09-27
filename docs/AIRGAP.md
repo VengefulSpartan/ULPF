@@ -26,11 +26,14 @@ On a machine with internet access, from the repository:
 
 ```bash
 docker compose build                                   # builds tracelog:latest
+docker compose pull gateway                            # nginx:alpine, the gateway in front of the services
 python scripts/check_image.py                          # optional: what is in the image, and does it run offline
-docker save tracelog:latest | gzip > tracelog-image.tar.gz
+docker save tracelog:latest nginx:alpine | gzip > tracelog-image.tar.gz
 ```
 
-Carry `tracelog-image.tar.gz`, `docker-compose.yml`, `config/` and `.env.example` across. On the
+Carry `tracelog-image.tar.gz`, `docker-compose.yml`, `docker/gateway/nginx.conf`, `config/` and
+`.env.example` across (the same folder layout). For the tests as well, add
+`docker compose --profile test build tests` and `tracelog-tests:latest` to the `docker save`. On the
 air-gapped host (Docker and the compose plugin installed from their offline packages):
 
 ```bash

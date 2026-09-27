@@ -8,6 +8,22 @@ logger = logging.getLogger("ulpf.client")
 
 BASE_URL = f"http://{settings.BACKEND_HOST}:{settings.BACKEND_PORT}{settings.API_PREFIX}"
 
+
+class BackendUnreachable(RuntimeError):
+    """The API did not answer and this dashboard may not run the backend in its own process."""
+
+
+def _direct_mode() -> None:
+    """Called before the dashboard runs backend code itself because the API did not answer.
+
+    That fallback suits one laptop running `streamlit run` without the API. In the containers the
+    dashboard is a separate service with no database (DASHBOARD_DIRECT_MODE=false): running the
+    writer here would make a second writer and fork the hash chain, so it says the API is down instead.
+    """
+    if not settings.DASHBOARD_DIRECT_MODE:
+        raise BackendUnreachable(f"The TRACELOG API at {BASE_URL} did not answer. Check the gateway, collector and "
+                                 f"query services (docker compose ps).")
+
 class APIClient:
     """
     HTTP client for the TRACELOG API.
@@ -43,6 +59,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.analytics import unparsed_lines
         return unparsed_lines(limit)
 
@@ -54,6 +71,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.ingestion import seed_sample_datasets
         return seed_sample_datasets()
 
@@ -65,6 +83,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.sources import list_sources
         return [s.model_dump() for s in list_sources()]
 
@@ -76,6 +95,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.sources import create_source
         from backend.models.source import SourceCreate
         return create_source(SourceCreate(**data)).model_dump()
@@ -92,6 +112,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.services.ingestion.pipeline import IngestionPipeline
         return IngestionPipeline.ingest_single_log(text, source_id, vendor, product)
 
@@ -109,6 +130,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.events import list_events
         return list_events(search=search, source_id=source_id, severity=severity, class_name=class_name, ip=None,
                            limit=limit, offset=offset, include_superseded=False)
@@ -121,6 +143,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.events import get_event_detail
         return get_event_detail(event_id)
 
@@ -132,6 +155,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.parsers import list_parsers
         return [p.model_dump() for p in list_parsers()]
 
@@ -147,6 +171,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.parsers import generate_parser, GenerateParserRequest
         return generate_parser(GenerateParserRequest(**payload)).model_dump()
 
@@ -158,6 +183,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.parsers import test_parser, TestParserRequest
         return test_parser(parser_id, TestParserRequest(sample_logs=sample_logs)).model_dump()
 
@@ -184,6 +210,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.parsers import reject_parser
         return reject_parser(parser_id).model_dump()
 
@@ -195,6 +222,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.integrity import verify_hash_chain
         return verify_hash_chain().model_dump()
 
@@ -206,6 +234,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.integrity import get_ledger
         return get_ledger(limit=limit)
 
@@ -235,6 +264,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.integrity import restore_tampered_record
         from backend.api.integrity import RestoreRecordRequest
         return restore_tampered_record(RestoreRecordRequest(**payload))
@@ -248,6 +278,7 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
+        _direct_mode()
         from backend.api.correlation import run_rca, RunCorrelationRequest
         return run_rca(RunCorrelationRequest(**payload)).model_dump()
 
@@ -343,6 +374,10 @@ class APIClient:
         try:
             r = requests.request(method, f"{BASE_URL}/formats{path}", json=json_body, params=params, timeout=timeout)
         except Exception:
+            try:
+                _direct_mode()
+            except BackendUnreachable as exc:
+                return {"error": str(exc)}
             from backend.services.parser_generation.workflow import WorkflowError
             try:
                 return local()

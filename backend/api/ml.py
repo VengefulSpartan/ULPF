@@ -5,14 +5,16 @@ Analytics and machine-learning endpoints (docs/ML_DATA.md):
   GET  /api/ml/features        per-entity 5-minute window features, as CSV or JSON
   POST /api/ml/baseline/run    score recent windows against their baseline and write the flags as
                                OCSF Detection Findings
+  POST /api/ml/findings        the detector service's flags, written by the collector into the chain
 """
 import io
 import math
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import Response
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field
 
 from backend.services.ml import baseline, features as feat
 from backend.services.ml.rows import COLUMNS
@@ -64,3 +66,26 @@ def run_baseline(hours: float = Query(1, gt=0, le=24 * 7), lookback_hours: float
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=f"until is not an ISO 8601 time: {exc}")
     return baseline.run(until_ms=until_ms, score_hours=hours, lookback_hours=lookback_hours, write=not dry_run)
+
+
+class Finding(BaseModel):
+    uid: str = Field(min_length=1, max_length=128)
+    line: str = Field(min_length=1, max_length=65536)
+
+
+class Findings(BaseModel):
+    findings: List[Finding] = Field(max_length=10_000)
+
+
+@router.post("/findings")
+def receive_findings(body: Findings, request: Request):
+    """Flags from the detector service (backend/services/ml/worker.py), which reads the archive but
+    never writes it. They are written here, by the one writer, like any device's alert; a finding
+    whose uid is already stored is skipped, so a detector that retries writes each flag once.
+    Needs the HTTP input token when the collector's HTTP inputs require one."""
+    from backend.api.receivers import _authorised
+    if not _authorised(request):
+        return JSONResponse({"detail": "unauthorised"}, status_code=401)
+    stored = baseline.write_lines([(f.uid, f.line) for f in body.findings], transport="http")
+    return {"received": len(body.findings), "written": len(stored),
+            "sequence_nums": [s.sequence_num for s in stored]}

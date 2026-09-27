@@ -24,12 +24,13 @@ def test_the_image_leaves_out_secrets_data_and_history():
 def test_compose_runs_each_process_unprivileged_and_read_only():
     import yaml
     services = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))["services"]
-    assert set(services) == {"tracelog-backend", "tracelog-frontend"}
-    for name, svc in services.items():
+    ours = {name: svc for name, svc in services.items() if "sensor" not in svc.get("profiles", [])}
+    assert set(ours) == {"gateway", "collector", "query", "detector", "dashboard", "tests"}
+    for name, svc in ours.items():
         assert svc["read_only"] is True and svc["cap_drop"] == ["ALL"], name
         assert "no-new-privileges:true" in svc["security_opt"], name
-        assert "&" not in " ".join(svc["command"]), name
-    assert services["tracelog-frontend"]["depends_on"]["tracelog-backend"]["condition"] == "service_healthy"
+        assert "&" not in " ".join(svc.get("command") or []), name
+    assert services["dashboard"]["depends_on"]["gateway"]["condition"] == "service_healthy"
 
 
 def test_the_image_has_what_the_parquet_output_and_the_analytics_need():
@@ -48,10 +49,11 @@ def test_the_build_context_leaves_out_measurement_results_and_has_no_inline_comm
 
 def test_compose_passes_the_settings_through():
     import yaml
-    backend = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))["services"]["tracelog-backend"]
-    env = dict(e.split("=", 1) for e in backend["environment"])
-    assert env["BASELINE_EVERY_MINUTES"] == "${BASELINE_EVERY_MINUTES:-0}"
-    assert env["SEARCH_INDEX"] == "${SEARCH_INDEX:-true}" and env["OCSF_VERSION"] == "${OCSF_VERSION:-1.1.0}"
+    services = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))["services"]
+    collector, detector = services["collector"]["environment"], services["detector"]["environment"]
+    assert collector["SEARCH_INDEX"] == "${SEARCH_INDEX:-true}" and collector["OCSF_VERSION"] == "${OCSF_VERSION:-1.1.0}"
+    assert collector["BASELINE_EVERY_MINUTES"] == "0"          # the detector service scores the windows
+    assert detector["BASELINE_EVERY_MINUTES"] == "${BASELINE_EVERY_MINUTES:-5}"
 
 
 def test_the_live_sensor_sees_the_web_server_on_every_docker_platform():

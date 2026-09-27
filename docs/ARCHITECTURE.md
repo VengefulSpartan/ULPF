@@ -146,10 +146,12 @@ performance figures come from `scripts/benchmark.py` on stated hardware.
 
 ## Deployment
 
-`docker compose up` runs the API and the dashboard as two containers from one image, as an
-unprivileged user, with a read-only root filesystem and all capabilities dropped; `.dockerignore`
-keeps secrets, databases and version control out of the image. `python run_app.py` runs both
-without Docker. Nothing reaches the internet: Swagger UI ships in the image and the dashboard's
+`docker compose up` runs TRACELOG as five services from one image (plus nginx as the gateway),
+each as an unprivileged user with a read-only root filesystem and all capabilities dropped:
+a collector that receives everything and is the only writer of the archive and the chain, a
+read-only query service, the ML detector, the dashboard, and the gateway in front
+([SERVICES.md](SERVICES.md)). `.dockerignore` keeps secrets, databases and version control out of
+the image. `python run_app.py` runs the same code as one process without Docker. Nothing reaches the internet: Swagger UI ships in the image and the dashboard's
 telemetry is off ([AIRGAP.md](AIRGAP.md)). Outputs connect only to the destinations configured in
 `config/tracelog.yaml`, with secrets supplied as environment variables.
 
@@ -162,4 +164,4 @@ telemetry is off ([AIRGAP.md](AIRGAP.md)). Outputs connect only to the destinati
 | Formats with no parser | 85 correct, 18 missed, 0 wrong; learned parsers then fill 2,200 of 2,200 fields on new lines | `python scripts/evaluate_unseen_formats.py --learned` |
 | Throughput | 2,300–2,700 events/s per process on 2 vCPUs, archive, parse, OCSF and chain included; 4,866 with two shards | `python scripts/benchmark.py -n 20000 -b 1000 [-w 2]` |
 | Baseline detector, synthetic days | 3 seeds, 8 injected attacks each: the 6 a per-window baseline can see caught every time, the 2 built to stay under it missed; 1 false flag a day, a nightly backup; every finding valid OCSF and chained | `python scripts/evaluate_baseline.py`, report in [ML_EVALUATION.md](ML_EVALUATION.md) |
-| Tests | 313 passing | `pytest -q` |
+| Tests | 340 passing | `pytest -q` |

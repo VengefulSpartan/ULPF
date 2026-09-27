@@ -1,8 +1,9 @@
 """
 Container health check: healthy when the process this container runs answers.
 
-The image runs one process per container, either the API (port 8000) or the dashboard (8501),
-so the check asks both and succeeds if either answers. Standard library only, so the runtime
+The image runs one process per container: the collector, the query API or the detector (each
+answers /health on port 8000) or the dashboard (8501), so the check asks both ports and succeeds if
+either answers. Standard library only, so the runtime
 image needs no curl.
 """
 import sys

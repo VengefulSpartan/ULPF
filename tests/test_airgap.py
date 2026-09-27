@@ -6,8 +6,12 @@ recorded) is described in docs/AIRGAP.md.
 """
 import hashlib
 import re
-import tomllib
 from pathlib import Path
+
+try:
+    import tomllib                  # Python 3.11+
+except ModuleNotFoundError:         # Python 3.10, which pyproject.toml still supports: Streamlit brings toml
+    import toml as tomllib
 
 from fastapi.testclient import TestClient
 

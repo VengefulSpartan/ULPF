@@ -1,6 +1,20 @@
-# TRACELOG: the API (receivers, pipeline, outputs) and the dashboard, one process per container,
-# both from the same image, sharing one data volume. Neither runs as root, gains privileges or
-# writes outside its data volume and a scratch /tmp.
+# TRACELOG as services, one per container (docs/SERVICES.md):
+#
+#   gateway    the one address for browsers, tools and HTTP senders (:8000); routes each request
+#   collector  syslog/HEC/OTLP/file/Kafka inputs, the one writer (archive, OCSF, hash chain), outputs
+#   query      read-only API: search, chain verification, audit reports, exports, RCA, ML features
+#   detector   the ML baseline: reads the archive, sends its findings to the collector to be chained
+#   dashboard  the Streamlit UI (:8501), which talks to the gateway only
+#
+#   docker compose up -d --build              # the five services
+#   docker compose --profile sensor up -d     # plus a live Suricata sensor watching a web server under attack
+#   docker compose run --rm --build tests     # the whole test suite, in Linux, whatever the host is
+#                                             # (--build: the test image holds a copy of the code)
+#
+# The same containers run on Linux, macOS and Windows (Docker Desktop): the code always runs on
+# Linux with Python 3.11, whatever the laptop has. The archive is a named volume, not a folder of the
+# host: SQLite's locking is only reliable on the container's own file system (a Windows folder
+# mounted into Linux is not), and only the collector writes to it.
 
 x-hardening: &hardening
   read_only: true              # the code in the image cannot be changed by the process running it
@@ -10,63 +24,188 @@ x-hardening: &hardening
   security_opt:
     - no-new-privileges:true
   cap_drop:
-    - ALL                      # nothing binds below 1024 inside the container (syslog is on 5514)
+    - ALL                      # nothing binds below 1024 inside a container (syslog is on 5514)
+  restart: unless-stopped
+  healthcheck:                 # the image's check (scripts/healthcheck.py), asked more often so the
+    interval: 10s              # services behind it start sooner
+    timeout: 8s
+    start_period: 30s
+    retries: 3
+
+x-settings: &settings          # backend/config.py; set them in .env to change them without editing this file
+  ENVIRONMENT: demo
+  OCSF_VERSION: ${OCSF_VERSION:-1.1.0}
+  SEARCH_INDEX: ${SEARCH_INDEX:-true}
+  FORWARDED_ALLOW_IPS: "*"     # uvicorn: take the sender's address from the gateway's X-Forwarded-For
 
 services:
-  tracelog-backend:
+  gateway:
+    image: nginx:alpine
+    read_only: true
+    user: "101:101"            # the image's nginx user; it listens on 8000, so it needs no capability
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - ./docker/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8000:8000"            # API, Swagger UI (/docs), Splunk HEC, OTLP/HTTP, /api/ingest/stream
+    depends_on:
+      collector:
+        condition: service_healthy
+      query:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8000/gateway/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  collector:
     build: .
     image: tracelog:latest
     <<: *hardening
     command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
-      - "8000:8000"          # API, dashboard backend, Splunk HEC and OTLP/HTTP receivers
-      - "514:5514/udp"       # syslog from devices (standard port on the host, unprivileged in the container)
+      - "514:5514/udp"         # syslog from devices (standard port on the host, unprivileged in the container)
       - "514:5514/tcp"
-      - "5514:5514/tcp"      # for devices that cannot use TCP ports below 1025 (Cisco ASA)
-      - "6514:6514/tcp"      # syslog over TLS, once a syslog-tls input is enabled in config/tracelog.yaml
+      - "5514:5514/tcp"        # for devices that cannot use TCP ports below 1025 (Cisco ASA)
+      - "6514:6514/tcp"        # syslog over TLS, once a syslog-tls input is enabled in config/tracelog.yaml
     volumes:
       - tracelog-data:/app/data
       - ./config:/app/config:ro              # edit connectors without rebuilding the image
-      - ./suricata-logs:/app/suricata-logs:ro # live sensor from docker-compose.devices.yml
+      - suricata-logs:/app/suricata-logs:ro  # the live sensor (profile "sensor") writes eve.json here
     environment:
-      - BACKEND_HOST=0.0.0.0
-      - BACKEND_PORT=8000
-      - ENVIRONMENT=demo
-      - TRACELOG_CONFIG=/app/config/tracelog.yaml
-      # settings (backend/config.py); set them in .env to change them without editing this file
-      - BASELINE_EVERY_MINUTES=${BASELINE_EVERY_MINUTES:-0}   # 5 runs the ML detector as each window closes
-      - SEARCH_INDEX=${SEARCH_INDEX:-true}
-      - OCSF_VERSION=${OCSF_VERSION:-1.1.0}
+      <<: *settings
+      SERVICE_ROLE: collector
+      TRACELOG_CONFIG: /app/config/tracelog.yaml
+      BASELINE_EVERY_MINUTES: "0"            # the detector service scores the windows
       # Secrets referenced as ${VAR} in config/tracelog.yaml; set them in .env (never committed,
-      # never copied into the image — see .dockerignore).
-      - TRACELOG_HEC_TOKEN=${TRACELOG_HEC_TOKEN:-}
-      - SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN:-}
-      - ELASTIC_API_KEY=${ELASTIC_API_KEY:-}
-      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD:-}
-      - WAZUH_INDEXER_PASSWORD=${WAZUH_INDEXER_PASSWORD:-}
-      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
-      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
-      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
-      - DD_API_KEY=${DD_API_KEY:-}
-      - NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY:-}
-      - SOAR_TOKEN=${SOAR_TOKEN:-}
-    restart: unless-stopped
+      # never copied into the image: see .dockerignore).
+      TRACELOG_HEC_TOKEN: ${TRACELOG_HEC_TOKEN:-}
+      SPLUNK_HEC_TOKEN: ${SPLUNK_HEC_TOKEN:-}
+      ELASTIC_API_KEY: ${ELASTIC_API_KEY:-}
+      OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD:-}
+      WAZUH_INDEXER_PASSWORD: ${WAZUH_INDEXER_PASSWORD:-}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+      DD_API_KEY: ${DD_API_KEY:-}
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      SOAR_TOKEN: ${SOAR_TOKEN:-}
 
-  tracelog-frontend:
+  query:
+    image: tracelog:latest
+    <<: *hardening
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - tracelog-data:/app/data              # mounted writable for SQLite's shared-memory file; the connection is read-only
+    environment:
+      <<: *settings
+      SERVICE_ROLE: query
+      DB_READ_ONLY: "true"
+    depends_on:
+      collector:
+        condition: service_healthy           # the collector creates the database
+
+  detector:
+    image: tracelog:latest
+    <<: *hardening
+    command: ["python", "-m", "backend.services.ml.worker"]
+    volumes:
+      - tracelog-data:/app/data
+    environment:
+      DB_READ_ONLY: "true"
+      BASELINE_EVERY_MINUTES: ${BASELINE_EVERY_MINUTES:-5}
+      COLLECTOR_URL: http://collector:8000
+      COLLECTOR_TOKEN: ${TRACELOG_HEC_TOKEN:-}
+    depends_on:
+      collector:
+        condition: service_healthy
+
+  dashboard:
     image: tracelog:latest
     <<: *hardening
     command: ["streamlit", "run", "frontend/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
     ports:
       - "8501:8501"
-    volumes:
-      - tracelog-data:/app/data
     environment:
-      - BACKEND_HOST=tracelog-backend
-      - BACKEND_PORT=8000
+      BACKEND_HOST: gateway
+      BACKEND_PORT: "8000"
+      DASHBOARD_DIRECT_MODE: "false"         # no database here: when the API is down it says so
     depends_on:
-      tracelog-backend:
-        condition: service_healthy   # the image's health check: the API answers /health
-    restart: unless-stopped
+      gateway:
+        condition: service_healthy
+
+  # ---- the test suite (docker compose run --rm tests) --------------------------------------------
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: docker/tests.Dockerfile
+    image: tracelog-tests:latest
+    network_mode: none                       # the tests need no network; mock servers listen on loopback
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ---- a live sensor for the demo (docker compose --profile sensor up -d) ------------------------
+  # Suricata shares the web server's network namespace, so it sees every packet to and from it; its
+  # four rules (config/suricata/tracelog-demo.rules) match what the traffic generator does. Its
+  # eve.json goes to the suricata-logs volume, which the collector tails (config/tracelog.yaml).
+  target-web:
+    profiles: ["sensor"]
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+
+  suricata:
+    profiles: ["sensor"]
+    image: jasonish/suricata:latest
+    network_mode: "service:target-web"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    volumes:
+      - suricata-logs:/var/log/suricata
+      - ./config/suricata:/etc/suricata/tracelog:ro
+    command: ["-i", "eth0", "-S", "/etc/suricata/tracelog/tracelog-demo.rules"]
+    depends_on:
+      - target-web
+
+  traffic-generator:
+    profiles: ["sensor"]
+    image: alpine:latest
+    # waits for Suricata to load its rules and open the interface before the first packet
+    command: >
+      sh -c "
+        apk add --no-cache curl nmap &&
+        echo 'Waiting for the sensor...' &&
+        sleep 20 &&
+        echo '[+] TCP connect scan of the web server' &&
+        nmap -sT -p 80,443,22 target-web || true &&
+        sleep 3 &&
+        echo '[+] Web attack probes' &&
+        curl -s -o /dev/null -A 'Nikto/2.1.6' http://target-web:80/ || true &&
+        curl -s -o /dev/null 'http://target-web:80/../../etc/passwd' || true &&
+        curl -s -o /dev/null 'http://target-web:80/?id=1%27%20OR%20%271%27=%271' || true &&
+        echo '[+] Attack simulation completed.'
+      "
+    depends_on:
+      - target-web
+      - suricata
 
 volumes:
   tracelog-data:
+  suricata-logs:

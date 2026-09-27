@@ -9,11 +9,16 @@ from backend.config import settings
 logger = logging.getLogger("ulpf.storage")
 
 class Database:
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None, read_only: Optional[bool] = None):
         self.db_path = db_path or settings.DB_PATH
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # The query and detector services read the collector's database and must never change it
+        # (setting DB_READ_ONLY): their connections are opened read-only, so SQLite itself refuses
+        # every write, and the schema is left to the collector, which creates it.
+        self.read_only = settings.DB_READ_ONLY if read_only is None else read_only
         self._local = threading.local()
-        self.init_db()
+        if not self.read_only:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.init_db()
 
     def get_connection(self) -> sqlite3.Connection:
         """
@@ -28,11 +33,18 @@ class Database:
         conn = getattr(self._local, "conn", None)
         if conn is not None:
             return conn
-        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+        if self.read_only:
+            if not self.db_path.exists():
+                raise sqlite3.OperationalError(f"no database at {self.db_path} yet: the collector creates it")
+            # a file: URI, which is how SQLite is told read-only; as_uri() is right on Windows paths too
+            conn = sqlite3.connect(f"{self.db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=30.0)
+        else:
+            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
-        # Enable WAL mode for high concurrency
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
+        if not self.read_only:
+            # Enable WAL mode for high concurrency (the writer sets it once; readers inherit it from the file)
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
         # Room to sort and join without touching the disk; durability is unchanged (see synchronous above)
         conn.execute("PRAGMA temp_store=MEMORY;")

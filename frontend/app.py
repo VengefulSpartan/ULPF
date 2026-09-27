@@ -6,7 +6,8 @@ for _name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
 
 import streamlit as st  # noqa: E402
 from pathlib import Path  # noqa: E402
-from frontend.api_client import APIClient
+from backend.config import settings  # noqa: E402
+from frontend.api_client import APIClient  # noqa: E402
 
 # Page setup
 st.set_page_config(
@@ -76,8 +77,9 @@ with st.sidebar:
 
     # Live backend health telemetry card
     is_online = APIClient.is_backend_online()
-    api_color = "#4ADE80" if is_online else "#FBBF24"
-    api_status = "Online (:8000)" if is_online else "Direct Service Mode"
+    api_color = "#4ADE80" if is_online else "#FBBF24" if settings.DASHBOARD_DIRECT_MODE else "#F87171"
+    api_status = (f"Online ({settings.BACKEND_HOST}:{settings.BACKEND_PORT})" if is_online
+                  else "Direct Service Mode" if settings.DASHBOARD_DIRECT_MODE else "Unreachable")
 
     st.markdown(
         f"""
@@ -99,6 +101,12 @@ with st.sidebar:
         """,
         unsafe_allow_html=True
     )
+
+if not is_online and not settings.DASHBOARD_DIRECT_MODE:
+    # the containers: the dashboard never runs the backend itself (frontend/api_client.py says why)
+    st.error(f"The TRACELOG API at {settings.BACKEND_HOST}:{settings.BACKEND_PORT} is not answering. "
+             "Check the services with `docker compose ps` and `docker compose logs gateway collector query`.")
+    st.stop()
 
 # Route to selected page
 if "Overview" in page:

@@ -1,6 +1,7 @@
-# TRACELOG image. One image, one process per container: the API (with the syslog, HEC and OTLP
-# receivers) by default, the dashboard with `streamlit run ...` as the command. docker-compose.yml
-# runs both from this image.
+# TRACELOG image. One image, one process per container: by default the whole API in one process
+# (SERVICE_ROLE=all). docker-compose.yml runs the services from it (docs/SERVICES.md): the collector
+# and the read-only query API (this command, with SERVICE_ROLE set), the detector
+# (python -m backend.services.ml.worker) and the dashboard (streamlit run frontend/app.py).
 #
 # What goes in is decided by .dockerignore: no .env, no database, no .git, no local venv.
 # Secrets arrive as environment variables when the container starts. Needs BuildKit (the default

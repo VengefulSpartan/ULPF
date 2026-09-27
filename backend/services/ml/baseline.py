@@ -38,7 +38,7 @@ import json
 import math
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -304,21 +304,21 @@ def already_written(database, uids: List[str]) -> set:
     return {u for u in uids if u in stored}
 
 
-def write_findings(flags: List[Flag], database=None, window_minutes: int = feat.WINDOW_MINUTES) -> List[Any]:
-    """Write each new flag through the one writer (archive, parse, OCSF, hash chain) and hand the
-    stored findings to the outputs. Returns the stored events."""
+def write_lines(findings: List[Tuple[str, str]], database=None, transport: str = "internal") -> List[Any]:
+    """Write (finding uid, finding line) pairs through the one writer (archive, parse, OCSF, hash
+    chain), skipping the ids already stored, and hand the stored findings to the outputs. Returns
+    the stored events. The collector calls this for the detector service (POST /api/ml/findings)."""
     from backend.services.ingestion.pipeline import _route
     from backend.services.ingestion.stream import InboundRecord, StreamIngestor
 
     if database is None:
         from backend.services.storage import db as db_module
         database = db_module.db
-    done = already_written(database, [fl.finding_uid for fl in flags])
-    records = [InboundRecord(raw=fl.line(window_minutes).encode("utf-8"), transport="internal",
-                             input_name="baseline-detector",
+    done = already_written(database, [uid for uid, _ in findings])
+    records = [InboundRecord(raw=line.encode("utf-8"), transport=transport, input_name="baseline-detector",
                              hints={"source_name": "TRACELOG baseline detector", "vendor": "TRACELOG",
                                     "product": "Baseline detector"})
-               for fl in flags if fl.finding_uid not in done]
+               for uid, line in findings if uid not in done]
     if not records:
         return []
     stored = StreamIngestor().ingest(records)
@@ -326,11 +326,20 @@ def write_findings(flags: List[Flag], database=None, window_minutes: int = feat.
     return stored
 
 
+def write_findings(flags: List[Flag], database=None, window_minutes: int = feat.WINDOW_MINUTES) -> List[Any]:
+    """Write each new flag through the one writer, in this process. Returns the stored events."""
+    return write_lines([(fl.finding_uid, fl.line(window_minutes)) for fl in flags], database)
+
+
+Writer = Callable[[List[Flag], Any, int], List[Any]]
+
+
 def run(database=None, until_ms: Optional[int] = None, score_hours: float = 1.0,
         lookback_hours: float = LOOKBACK_HOURS, window_minutes: int = feat.WINDOW_MINUTES,
-        write: bool = True) -> Dict[str, Any]:
+        write: bool = True, writer: Optional[Writer] = None) -> Dict[str, Any]:
     """Score the complete windows of the last `score_hours` before `until_ms` (default: now), with
-    `lookback_hours` of history before them, and write the new flags as findings."""
+    `lookback_hours` of history before them, and write the new flags as findings: in this process by
+    default, or with `writer` (the detector service sends them to the collector, which writes them)."""
     width = window_minutes * 60 * 1000
     if until_ms is None:
         until_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -339,7 +348,7 @@ def run(database=None, until_ms: Optional[int] = None, score_hours: float = 1.0,
     events = feat.events_from_db(database, since_ms=since_ms - int(lookback_hours * 3600 * 1000),
                                  until_ms=until_ms)
     result = detect(events, since_ms, until_ms, window_minutes, lookback_hours)
-    stored = write_findings(result.flags, database, window_minutes) if write else []
+    stored = (writer or write_findings)(result.flags, database, window_minutes) if write else []
     return {
         "scored_from": _iso(since_ms), "scored_until": _iso(until_ms), "events_read": int(len(events)),
         "windows_scored": result.windows_scored, "windows_without_history": result.windows_without_history,
@@ -357,9 +366,11 @@ class Schedule:
     a flag already written is found by its id and not written twice."""
     GRACE_SECONDS = 30
 
-    def __init__(self, every_minutes: int):
+    def __init__(self, every_minutes: int, writer: Optional[Writer] = None):
         import threading
         self.every = max(1, int(every_minutes))
+        self.writer = writer
+        self.last_error: Optional[str] = None
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, name="baseline-detector", daemon=True)
         self.last: Optional[Dict[str, Any]] = None
@@ -371,6 +382,10 @@ class Schedule:
     def stop(self) -> None:
         self._stop.set()
 
+    def run_forever(self) -> None:
+        """Run in the calling thread until stop() (the detector service's main loop)."""
+        self._loop()
+
     def _delay(self) -> float:
         period = self.every * 60
         now = datetime.now(timezone.utc).timestamp()
@@ -381,8 +396,10 @@ class Schedule:
         log = logging.getLogger("tracelog.baseline")
         while not self._stop.wait(self._delay()):
             try:
-                self.last = run(score_hours=2 * self.every / 60)
+                self.last = run(score_hours=2 * self.every / 60, writer=self.writer)
+                self.last_error = None
                 if self.last["findings_written"]:
                     log.info("baseline detector wrote %d findings", self.last["findings_written"])
-            except Exception:
+            except Exception as exc:
+                self.last_error = f"{type(exc).__name__}: {exc}"[:300]
                 log.exception("baseline detector run failed")

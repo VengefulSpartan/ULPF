@@ -4,7 +4,9 @@
 # arrive as Detection Findings while the attack runs.
 #
 #   docker compose -f docker-compose.devices.yml up            # alongside `python run_app.py`
-#   docker compose -f docker-compose.yml -f docker-compose.devices.yml up --build   # all in Docker
+#
+# With TRACELOG itself in Docker, use the same sensor from docker-compose.yml instead:
+#   docker compose --profile sensor up -d --build
 #
 # Suricata shares the web server's network namespace (network_mode: service:target-web), so its
 # eth0 is the server's own interface and it sees every packet to and from the server. That works

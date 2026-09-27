@@ -55,8 +55,10 @@ the standard library and everything still works, about 5 % slower.
 pytest -q
 ```
 
-**Expect `313 passed`.** If tests fail, stop here — a number from a broken build is worse than no
-number.
+**Expect `340 passed`.** If tests fail, stop here — a number from a broken build is worse than no
+number. With Docker installed, `docker compose run --rm --build tests` runs the same suite in Linux: if it
+passes there and fails natively (a Windows laptop, say), the difference is the machine, not the
+code, and [SERVICES.md](SERVICES.md#linux-and-windows) lists what to check.
 
 ```bash
 python scripts/evaluate_unseen_formats.py
@@ -93,12 +95,15 @@ Detection Findings, start with `BASELINE_EVERY_MINUTES=5 python run_app.py` (or 
 With Docker instead of Python:
 
 ```bash
-docker compose up --build
+docker compose up -d --build    # five services: gateway, collector, query, detector, dashboard
+docker compose ps               # each should be "healthy"
+docker compose run --rm --build tests   # the test suite, in Linux, on any host
 python scripts/check_image.py   # optional: builds the image, checks what is in it, runs it offline
 ```
 
-Same ports, and syslog is published on 514 as well as 5514. For a machine with no internet access,
-see [AIRGAP.md](AIRGAP.md).
+Same ports, and syslog is published on 514 as well as 5514. The detector scores every 5 minutes
+(`BASELINE_EVERY_MINUTES` in `.env`). What each service does, and what happens when one stops:
+[SERVICES.md](SERVICES.md). For a machine with no internet access, see [AIRGAP.md](AIRGAP.md).
 
 ## 5. Measure the throughput
 

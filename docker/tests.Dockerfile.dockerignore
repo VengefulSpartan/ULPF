@@ -1,0 +1,53 @@
+# What `docker build -f docker/tests.Dockerfile .` may see (Docker reads this file instead of
+# .dockerignore for that Dockerfile). The tests read the docs, the compose files and the Dockerfile,
+# so those go in; secrets, data, results and history still do not.
+
+# Secrets
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
+**/id_rsa*
+**/id_ed25519*
+
+# Runtime data and measurements
+data/*
+!data/samples/
+.data/
+suricata-logs/
+results/
+
+# Version control and editor state (.gitattributes stays: a test reads it)
+.git/
+.github/
+.vscode/
+.idea/
+**/.DS_Store
+
+# Local Python environments, caches and build output
+venv/
+.venv/
+env/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Notes, recordings, and the leftovers of the archived legacy app
+Project outputs/
+*.mp4
+*.mov
+core/
+api/
+ingest/
+rca/
+storage/
+ui/
