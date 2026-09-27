@@ -87,7 +87,7 @@ def main() -> int:
             print(f"  [{i}/{len(SAMPLE_EVENTS)}] FAILED ({exc}): {evt['name']}")
             return 1
         time.sleep(args.delay)
-    print("Done. Open the dashboard: Log Explorer, and Correlation & RCA for the sequence.")
+    print("Done. Open the dashboard: Log Explorer, and Correlation for the sequence.")
     return 0
 
 

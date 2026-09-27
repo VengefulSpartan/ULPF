@@ -1,15 +1,76 @@
+# The dashboard follows the operating system's light or dark setting: both themes are defined
+# below, and frontend/assets/theme.css carries the same colours for everything Streamlit does not
+# draw itself. Change a colour in both places.
+
 [theme]
-base = "light"
-primaryColor = "#0077B6"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F4F7FA"
-textColor = "#263238"
-font = "sans serif"
+font = "IBM Plex Sans, sans-serif"
+codeFont = "IBM Plex Mono, monospace"
+baseFontSize = 14
+baseRadius = "0.5rem"
+buttonRadius = "0.5rem"
+showWidgetBorder = true
+showSidebarBorder = false
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+headingFontSizes = ["1.5rem", "1.25rem", "1.05rem", "0.95rem", "0.9rem", "0.85rem"]
+
+# Served from frontend/static (server.enableStaticServing), so the dashboard needs no font host.
+[[theme.fontFaces]]
+family = "IBM Plex Sans"
+url = "app/static/fonts/IBMPlexSans-Variable-latin.woff2"
+weight = "100 700"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "IBM Plex Mono"
+url = "app/static/fonts/IBMPlexMono-Regular-latin.woff2"
+weight = "400"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "IBM Plex Mono"
+url = "app/static/fonts/IBMPlexMono-Medium-latin.woff2"
+weight = "500"
+style = "normal"
+
+[theme.light]
+primaryColor = "#6d28d9"
+backgroundColor = "#f4f1fb"
+secondaryBackgroundColor = "#ece7f8"
+textColor = "#1b1530"
+borderColor = "#d8d0ec"
+linkColor = "#6d28d9"
+codeTextColor = "#5b21b6"
+codeBackgroundColor = "#eee9f9"
+dataframeHeaderBackgroundColor = "#efeaf9"
+violetColor = "#7c3aed"
+chartCategoricalColors = ["#7c3aed", "#0d9488", "#4f46e5", "#db2777", "#2563eb"]
+
+[theme.light.sidebar]
+backgroundColor = "#f1edfa"
+secondaryBackgroundColor = "#e8e2f6"
+
+[theme.dark]
+primaryColor = "#7c3aed"
+backgroundColor = "#0e0b19"
+secondaryBackgroundColor = "#1c1730"
+textColor = "#ece8fb"
+borderColor = "#312a4b"
+linkColor = "#b69cff"
+codeTextColor = "#cbb9ff"
+codeBackgroundColor = "#1f1a34"
+dataframeHeaderBackgroundColor = "#211b38"
+violetColor = "#a78bfa"
+chartCategoricalColors = ["#8b5cf6", "#0d9488", "#6366f1", "#ec4899", "#3b82f6"]
+
+[theme.dark.sidebar]
+backgroundColor = "#120e20"
+secondaryBackgroundColor = "#1d1732"
 
 [server]
 headless = true
 enableCORS = false
 enableXsrfProtection = false
+enableStaticServing = true
 
 [browser]
 # Air-gapped networks (PS item j): the dashboard sends no usage statistics anywhere. Streamlit's
@@ -17,5 +78,7 @@ enableXsrfProtection = false
 gatherUsageStats = false
 
 [client]
-# no Deploy button (it links to Streamlit's cloud) and no developer menu for people viewing the dashboard
+# No Deploy button (it links to Streamlit's cloud) and no developer menu for people viewing the dashboard.
+# theme.css also hides the menu itself, so there is no theme switch: the dashboard follows the system's
+# light or dark setting, as its stylesheet does.
 toolbarMode = "viewer"

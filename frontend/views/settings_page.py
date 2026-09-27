@@ -1,90 +1,74 @@
 import streamlit as st
+
 from backend.config import settings
+from frontend import ui
+
+def _cards(cards) -> str:
+    return f'<div class="tl-kpis" style="grid-template-columns:repeat({len(cards)}, minmax(0, 1fr))">{"".join(cards)}</div>'
+
+
+def _reset() -> None:
+    from backend.services.storage.db import db
+    with db.get_connection() as conn:
+        conn.execute("DELETE FROM integrity_ledger;")
+        conn.execute("DELETE FROM normalized_events;")
+        try:
+            conn.execute("INSERT INTO raw_search(raw_search) VALUES('delete-all');")
+        except Exception:
+            pass
+        conn.execute("DROP TRIGGER IF EXISTS raw_logs_fts_delete;")
+        conn.execute("DELETE FROM raw_logs;")
+        conn.execute("DELETE FROM incidents;")
+        conn.execute("DELETE FROM audit_tamper_backup;")
+        conn.execute("UPDATE sources SET event_count = 0, last_event_at = NULL;")
+        if getattr(settings, "SEARCH_INDEX", True):
+            conn.execute("""CREATE TRIGGER IF NOT EXISTS raw_logs_fts_delete AFTER DELETE ON raw_logs BEGIN
+                INSERT INTO raw_search (raw_search, rowid, raw_text) VALUES ('delete', old.rowid, old.raw_text);
+            END;""")
+        conn.commit()
+        try:
+            conn.execute("VACUUM;")
+        except Exception:
+            pass
+    st.cache_data.clear()
+    st.toast("All stored events deleted. Load the sample data on Overview to start again.")
+
 
 def render_settings():
-    st.markdown("## System Settings & Environment")
-    st.caption("Application runtime parameters, retention policies, and cryptographic security configuration")
+    ui.page_header("Settings", "How this installation is set up. Values come from environment variables and "
+                               "config/tracelog.yaml; this page does not change them.")
+    st.markdown(_cards([
+        ui.kpi("Environment", ui.esc(settings.ENVIRONMENT), "<span>runs without internet access</span>"),
+        ui.kpi("Parser learning", "On this machine", "<span>no external service, no LLM</span>"),
+        ui.kpi("Integrity", "SHA-256 chain", "<span>one record per event, in sequence</span>"),
+    ]), unsafe_allow_html=True)
 
-    st.markdown("##### Environment & Runtime Mode")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Deployment Mode</div>
-                <div class="metric-value" style="font-size:1.2rem; color:#123B5D;">{settings.ENVIRONMENT.upper()}</div>
-                <div class="metric-subtext">Air-Gapped / Standalone</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
-    with c2:
-        st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-title">Parser Generation Engine</div>
-                <div class="metric-value" style="font-size:1.2rem; color:#0077B6;">Offline Heuristics</div>
-                <div class="metric-subtext">Zero external API dependencies</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
-    with c3:
-        st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-title">Cryptographic Hash</div>
-                <div class="metric-value" style="font-size:1.2rem; color:#2E7D32;">SHA-256 Chain</div>
-                <div class="metric-subtext">Sequential transaction ledger</div>
-            </div>
-            """, unsafe_allow_html=True
-        )
-
-    st.markdown("---")
-
-    st.markdown("##### Storage & Database Parameters")
+    db_path = settings.DB_PATH if settings.DASHBOARD_DIRECT_MODE else "on the collector service (volume tracelog-data)"
+    st.markdown('<div class="tl-subhead">Storage</div>', unsafe_allow_html=True)
     st.markdown(
         f"""
-        - **Storage Engine**: SQLite 3 with Write-Ahead Logging (`WAL` mode)
-        - **Database Path**: `{settings.DB_PATH if settings.DASHBOARD_DIRECT_MODE else "on the collector service (volume tracelog-data)"}`
-        - **Schema Version**: `1.0.0`
-        - **API Binding**: `{settings.BACKEND_HOST}:{settings.BACKEND_PORT}`
-        - **Secrets Policy**: Zero API keys or sensitive credentials exposed in frontend
+        - **Database**: SQLite 3 in write-ahead-log (WAL) mode
+        - **Path**: `{db_path}`
+        - **API address**: `{settings.BACKEND_HOST}:{settings.BACKEND_PORT}`
+        - **Secrets**: read from environment variables only; none reach the browser
+        """
+    )
+    st.markdown('<div class="tl-subhead">Rules that always apply</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        - A parser has to pass its test before it can be approved.
+        - Every raw line is kept byte for byte, with its SHA-256.
+        - Sequence numbers have no gaps and never go backwards.
         """
     )
 
-    st.markdown("##### Governance & Approval Policies")
-    st.checkbox("Enforce Test Validation Before Parser Approval", value=True, disabled=True, help="Prevents untested candidate parsers from being promoted to active parsing.")
-    st.checkbox("Maintain Lossless Raw Byte Ledger", value=True, disabled=True, help="Preserves exact original log payload string and calculates SHA-256 upon arrival.")
-    st.checkbox("Enforce Transactional Sequential Monotonicity", value=True, disabled=True, help="Ensures sequence numbers have zero gaps and zero reordering.")
-
-    st.markdown("---")
-    st.markdown("##### Database Maintenance")
+    st.markdown('<div class="tl-subhead">Database</div>', unsafe_allow_html=True)
     if not settings.DASHBOARD_DIRECT_MODE:
         # the containers: the dashboard has no database, and only the collector writes to it
-        st.button("Reset Database & Flush Sample Data", type="secondary", disabled=True)
-        st.caption("The database belongs to the collector service. To start again from an empty archive: "
-                   "`docker compose down -v` then `docker compose up -d`.")
-    elif st.button("Reset Database & Flush Sample Data", type="secondary"):
-        from backend.services.storage.db import db
-        with db.get_connection() as conn:
-            conn.execute("DELETE FROM integrity_ledger;")
-            conn.execute("DELETE FROM normalized_events;")
-            try:
-                conn.execute("INSERT INTO raw_search(raw_search) VALUES('delete-all');")
-            except Exception:
-                pass
-            conn.execute("DROP TRIGGER IF EXISTS raw_logs_fts_delete;")
-            conn.execute("DELETE FROM raw_logs;")
-            conn.execute("DELETE FROM incidents;")
-            conn.execute("DELETE FROM audit_tamper_backup;")
-            conn.execute("UPDATE sources SET event_count = 0, last_event_at = NULL;")
-            if getattr(settings, "SEARCH_INDEX", True):
-                conn.execute("""CREATE TRIGGER IF NOT EXISTS raw_logs_fts_delete AFTER DELETE ON raw_logs BEGIN
-                    INSERT INTO raw_search (raw_search, rowid, raw_text) VALUES ('delete', old.rowid, old.raw_text);
-                END;""")
-            conn.commit()
-            try:
-                conn.execute("VACUUM;")
-            except Exception:
-                pass
-        st.success("Database tables flushed. Navigate to Overview to re-seed sample data.")
-        st.rerun()
+        st.button("Delete all stored events", disabled=True)
+        st.caption("The database belongs to the collector service. To start from an empty archive: "
+                   "`docker compose down -v`, then `docker compose up -d`.")
+        return
+    with st.popover("Delete all stored events"):
+        st.markdown("This deletes every stored event, raw line, chain record and incident. Sources stay.")
+        st.button("Delete everything", type="primary", on_click=_reset)

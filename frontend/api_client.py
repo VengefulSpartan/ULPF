@@ -47,9 +47,21 @@ class APIClient:
                 return r.json()
         except Exception:
             pass
-        # Fallback to service directly
+        _direct_mode()
         from backend.api.analytics import get_overview_kpis
         return get_overview_kpis()
+
+    @classmethod
+    def get_activity(cls, hours: float = 24) -> Dict[str, Any]:
+        try:
+            r = requests.get(f"{BASE_URL}/analytics/activity", params={"hours": hours}, timeout=5.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        _direct_mode()
+        from backend.api.analytics import activity
+        return activity(hours)
 
     @classmethod
     def get_unparsed(cls, limit: int = 5) -> Dict[str, Any]:

@@ -1,130 +1,109 @@
-import streamlit as st
-import json
 import pandas as pd
+import streamlit as st
+
+from frontend import ui
 from frontend.api_client import APIClient
 
+VENDORS = ["Palo Alto Networks", "Cisco", "Fortinet", "Suricata", "Check Point", "pfSense", "Generic"]
+SAMPLE_LINE = ("CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|start|3|src=10.0.1.25 dst=192.168.1.100 "
+               "spt=44123 dpt=80 proto=TCP act=allow")
+
+
+def _channels(conn: dict) -> str:
+    by_type = {}
+    for i in conn["inputs"]:
+        t = i.get("type", "")
+        key = "Syslog" if t.startswith("syslog") else "HTTP (HEC, OTLP, NDJSON)" if t == "http" else t.title()
+        agg = by_type.setdefault(key, {"received": 0, "where": [], "last": None})
+        agg["received"] += i.get("received", 0)
+        agg["where"].append(i.get("listening") or i.get("name"))
+        agg["last"] = max(filter(None, [agg["last"], i.get("last_received_at")]), default=None)
+    if conn["http_receivers"]["enabled"]:
+        by_type.setdefault("HTTP (HEC, OTLP, NDJSON)", {"received": 0, "where": ["/services/collector, /v1/logs"],
+                                                        "last": None})
+    cards = [ui.kpi(name, ui.num(agg["received"]) + " <small>received</small>",
+                    f"<span>{ui.esc(' · '.join(str(w) for w in agg['where'][:3]))}</span>",
+                    dot="good" if agg["received"] else "muted")
+             for name, agg in by_type.items()]
+    return f'<div class="tl-kpis" style="grid-template-columns:repeat({max(len(cards), 1)}, minmax(0, 1fr))">{"".join(cards)}</div>'
+
+
 def render_sources():
-    st.markdown("## Sources & Onboarding")
-    st.caption("Manage perimeter network appliances, ingestion channels, and parser associations")
+    sources = APIClient.list_sources()
+    events = sum(s.get("event_count") or 0 for s in sources)
+    ui.page_header("Sources", f"<b>{len(sources)}</b> sources · {ui.num(events)} events")
 
-    tab_list, tab_add, tab_test = st.tabs(["Active Sources", "Register New Source", "Test Ingestion & Normalization"])
+    tab_list, tab_add, tab_test = st.tabs(["Sources", "Add a source", "Try a log line"])
 
-    # 1. Active Sources Tab
     with tab_list:
-        sources = APIClient.list_sources()
         if sources:
             df = pd.DataFrame(sources)
-            cols = ["name", "vendor", "product", "format_type", "category", "event_count", "last_event_at"]
-            st.dataframe(df[[c for c in cols if c in df.columns]], use_container_width=True, hide_index=True)
+            cols = {"name": "Name", "vendor": "Vendor", "product": "Product", "format_type": "Format",
+                    "category": "Type", "event_count": "Events", "last_event_at": "Last event"}
+            st.dataframe(df[[c for c in cols if c in df.columns]].rename(columns=cols), width="stretch",
+                         hide_index=True)
         else:
-            st.warning("No log sources configured yet. Register a source or load demo datasets.")
+            st.info("No sources yet. A device appears here with its first message, or add one by hand.")
 
-        st.markdown("---")
-        st.markdown("##### Ingestion channels (live)")
+        st.markdown('<div class="tl-subhead">Inputs</div>', unsafe_allow_html=True)
         conn = APIClient.get_connectors()
         if conn is None:
-            st.info("Start the API server to see live syslog, HEC and OTLP channels. File upload and the "
-                    "single-line API work either way.")
+            st.info("The API is not running, so there are no network inputs. File upload and single lines still work.")
         else:
-            by_type = {}
-            for i in conn["inputs"]:
-                t = i.get("type", "")
-                key = "Syslog" if t.startswith("syslog") else "HTTP (HEC / OTLP / NDJSON)" if t == "http" else t.title()
-                agg = by_type.setdefault(key, {"received": 0, "where": [], "last": None})
-                agg["received"] += i.get("received", 0)
-                agg["where"].append(i.get("listening") or i.get("name"))
-                agg["last"] = max(filter(None, [agg["last"], i.get("last_received_at")]), default=None)
-            if conn["http_receivers"]["enabled"]:
-                by_type.setdefault("HTTP (HEC / OTLP / NDJSON)", {"received": 0, "where": ["/services/collector, /v1/logs"],
-                                                                  "last": None})
-            cols = st.columns(max(len(by_type), 1))
-            for col, (name, agg) in zip(cols, by_type.items()):
-                col.markdown(
-                    f"""
-                    <div class="metric-card">
-                        <div class="metric-title">{name}</div>
-                        <div class="metric-value" style="font-size:1.2rem; color:#2E7D32;">● {agg['received']:,} received</div>
-                        <div class="metric-subtext">{' · '.join(str(w) for w in agg['where'][:3])}</div>
-                    </div>
-                    """, unsafe_allow_html=True
-                )
-            st.caption("New devices register themselves here on their first message. Setup steps for each vendor "
-                       "are on the Connectors page.")
+            st.markdown(_channels(conn), unsafe_allow_html=True)
+            st.caption("A new device is added here on its first message. Setup for each vendor is on the Connectors page.")
 
-    # 2. Add Source Tab
     with tab_add:
-        st.markdown("##### Register a Perimeter Network Source")
-        with st.form("add_source_form"):
+        with st.form("add_source_form", border=False):
             col1, col2 = st.columns(2)
             with col1:
-                name = st.text_input("Source Identifier / Name", placeholder="e.g. PA-5200-Border-FW")
-                vendor = st.selectbox("Device Vendor", ["Palo Alto Networks", "Cisco", "Fortinet", "Suricata", "Check Point", "pfSense", "Generic"])
-                product = st.text_input("Product Model", placeholder="e.g. PAN-OS, ASA, FortiGate, Snort")
+                name = st.text_input("Name", placeholder="PA-5200-border")
+                vendor = st.selectbox("Vendor", VENDORS)
+                product = st.text_input("Product", placeholder="PAN-OS, ASA, FortiGate, Snort")
             with col2:
-                format_type = st.selectbox("Log Format", ["cef", "syslog", "kv", "json", "leef", "auto"])
-                category = st.selectbox("Appliance Category", ["firewall", "vpn", "ids", "router", "proxy", "network"])
-                desc = st.text_area("Description / Network Location", placeholder="Border perimeter egress point")
+                format_type = st.selectbox("Log format", ["cef", "syslog", "kv", "json", "leef", "auto"])
+                category = st.selectbox("Device type", ["firewall", "vpn", "ids", "router", "proxy", "network"])
+                desc = st.text_area("Notes", placeholder="Where it sits, what it protects", height=96)
 
-            submitted = st.form_submit_button("Register Source", type="primary")
-            if submitted:
+            if st.form_submit_button("Add source", type="primary"):
                 if not name or not product:
-                    st.error("Name and Product Model are required.")
+                    st.error("Name and product are required.")
                 else:
                     try:
-                        res = APIClient.create_source({
-                            "name": name,
-                            "vendor": vendor,
-                            "product": product,
-                            "format_type": format_type,
-                            "category": category,
-                            "description": desc,
-                            "is_active": True
-                        })
-                        st.success(f"Source '{res.get('name')}' created successfully!")
+                        res = APIClient.create_source({"name": name, "vendor": vendor, "product": product,
+                                                       "format_type": format_type, "category": category,
+                                                       "description": desc, "is_active": True})
+                        st.toast(f"Added {res.get('name')}.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error creating source: {str(e)}")
+                        st.error(f"Could not add the source: {e}")
 
-    # 3. Test Ingestion Tab
     with tab_test:
-        st.markdown("##### Instant Ingestion & Normalization Sandbox")
-        sources = APIClient.list_sources()
         if not sources:
-            st.info("Please register or load a source first.")
+            st.info("Add a source or load the sample data first.")
             return
+        source_map = {f"{s['name']} ({s['vendor']} {s['product']})": s["id"] for s in sources}
+        label = st.selectbox("Source", list(source_map))
+        sel_source = next(s for s in sources if s["id"] == source_map[label])
+        sample_text = st.text_area("Log line", value=SAMPLE_LINE, height=90)
+        st.caption("The line is archived, parsed and chained like any other event.")
 
-        source_map = {f"{s['name']} ({s['vendor']} {s['product']})": s['id'] for s in sources}
-        selected_source_label = st.selectbox("Select Target Source", list(source_map.keys()))
-        selected_source_id = source_map[selected_source_label]
-        sel_source = next(s for s in sources if s["id"] == selected_source_id)
-
-        sample_text = st.text_area(
-            "Paste Raw Log Line",
-            value='CEF:0|Palo Alto Networks|PAN-OS|10.1|TRAFFIC|start|3|src=10.0.1.25 dst=192.168.1.100 spt=44123 dpt=80 proto=TCP act=allow',
-            height=100
-        )
-
-        if st.button("Test Ingest & Normalize", type="primary"):
+        if st.button("Ingest this line", type="primary"):
             try:
-                res = APIClient.ingest_single(
-                    text=sample_text,
-                    source_id=selected_source_id,
-                    vendor=sel_source["vendor"],
-                    product=sel_source["product"]
-                )
-                st.success("Log successfully pre-processed, normalized, and appended to hash ledger!")
-                
-                col_r1, col_r2 = st.columns(2)
-                with col_r1:
-                    st.markdown("**1. Lossless Raw Storage & Lineage:**")
-                    st.markdown(f"**Sequence Number**: `#{res.get('sequence_num')}`")
-                    st.markdown(f"**Detected Format**: `{res.get('format_detected')}`")
-                    st.markdown(f"**Raw SHA-256 Hash**:")
-                    st.code(res.get('raw_hash'), language="text")
-                with col_r2:
-                    st.markdown("**2. OCSF Normalization:**")
-                    st.markdown(f"**OCSF Class**: `{res.get('ocsf_class')}`")
-                    st.markdown(f"**Assigned Severity**: `{res.get('severity')}`")
-                    st.markdown(f"**Event UUID**: `{res.get('event_id')}`")
+                res = APIClient.ingest_single(text=sample_text, source_id=sel_source["id"],
+                                              vendor=sel_source["vendor"], product=sel_source["product"])
             except Exception as e:
-                st.error(f"Ingestion failed: {str(e)}")
+                st.error(f"Ingest failed: {e}")
+                return
+            st.success(f"Stored as event #{res.get('sequence_num')}.")
+            col1, col2 = st.columns(2)
+            with col1.container(key="tile-src-raw"):
+                st.markdown("**Archived line**")
+                st.markdown(f"Format detected: `{res.get('format_detected')}`")
+                st.markdown("SHA-256 of the raw bytes:")
+                st.code(res.get("raw_hash"), language="text")
+            with col2.container(key="tile-src-ocsf"):
+                st.markdown("**Normalized event**")
+                st.markdown(f"OCSF class: `{res.get('ocsf_class')}`")
+                st.markdown(f"Severity: `{res.get('severity')}`")
+                st.markdown(f"Event ID: `{res.get('event_id')}`")

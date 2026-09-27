@@ -57,7 +57,7 @@ Modern enterprise security operations centers (SOCs) ingest massive volumes of p
 ```
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                         STREAMLIT OPERATIONS CENTER                         │
- │  Port 8501 · Custom Cyber Dark/Light Theme · Plotly Charts · 10 Views       │
+ │  Port 8501 · follows the system light or dark setting · 10 pages            │
  └──────────────────────────────────────┬──────────────────────────────────────┘
                                         │ HTTP REST / Fallback
                                         ▼
@@ -210,6 +210,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 #### `backend/api/analytics.py`
 - **Routes**:
   - `GET /api/analytics/overview`: Calculates operational metrics: total events, active sources, parser count, approved parsers, events by category, events by source, and events by severity.
+  - `GET /api/analytics/activity?hours=24`: What happened in the newest hours of stored events, for the overview dashboard: events and denials per time slot, detections, events by source, class and severity, and the most denied addresses. The window ends at the newest event, so an imported day still shows.
 
 #### `backend/api/export.py`
 - **Routes**:
@@ -289,76 +290,79 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 - `backend/services/integrity/delivery_ledger.py`: the hash-chained record of every delivery outcome per output; `reconcile.py` computes the reconciliation and the audit report data; `audit_pdf.py` renders the PDF; `backend/api/audit.py` serves them.
 - `backend/services/ingestion/stream.py`: lossless batched ingestion for streamed logs with source auto-registration. `backend/services/normalization/ocsf_export.py`: the strict OCSF 1.1.0 event every output sends, plus a validator. `backend/api/receivers.py`: the HEC, OTLP and stream receivers. `backend/api/connectors.py`: status, test and flush endpoints.
 
-### Frontend Operations Center (`frontend/`)
+### Dashboard (`frontend/`)
 
 #### `frontend/app.py`
-- **Role**: Streamlit application entrypoint.
-- **Responsibilities**:
-  - Sets page layout (`wide`) and browser title.
-  - Injects custom enterprise CSS from `frontend/assets/style.css`.
-  - Renders the modern Cyber Operations Sidebar (eliminating radio buttons, adding icons, glowing active pills, and system telemetry status card).
-  - Routes navigation to the 10 view modules in `frontend/views/`.
+- The Streamlit entry point: page setup, the stylesheet, the logo, and the navigation. Each page has its own
+  address (`/log-explorer`, `/integrity` …) through `st.navigation`, grouped as Workspace, Security, Data and
+  System. The sidebar ends with the API status.
 
 #### `frontend/api_client.py`
-- **Role**: High-resilience API communication client.
-- **Responsibilities**:
-  - Interacts with FastAPI backend over HTTP (`http://127.0.0.1:8000/api`).
-  - Includes transparent fallback to internal Python service functions if the standalone API process is starting up, ensuring uninterrupted demo stability.
+- Calls the API over HTTP. When the API does not answer and `DASHBOARD_DIRECT_MODE` is on (one laptop, no
+  containers) it runs the same backend function in its own process; in the containers it says the API is down
+  instead of becoming a second writer.
 
-#### `frontend/assets/style.css`
-- **Role**: Enterprise cybersecurity stylesheet.
-- **Responsibilities**:
-  - Custom palette: `#FFFFFF` canvas, `#123B5D` deep blue headers, `#0077B6` accent blue, `#F4F7FA` panels, `#CBD5E1` borders.
-  - High-contrast typography: Forces dark navy (`#0F172A`) for all form labels, ensuring 100% visibility in any browser mode.
-  - Converts Streamlit radio navigation into sleek hoverable, glowing navigation pills.
-  - Styles terminal code boxes (`.raw-box`), hash pills (`.hash-pill`), and status badges.
+#### `frontend/ui.py`
+- Page headers, tiles, number formats and the charts: time series with a detections lane, bar lists, a
+  part-to-whole bar, device lanes, sparklines and tables, all built as HTML and inline SVG. No chart library is
+  loaded (Plotly alone was 4 MB of JavaScript on the first page), and hover read-outs are plain CSS. Every
+  value that can come from a log line is escaped before it is placed in HTML.
+
+#### `frontend/assets/theme.css`, `frontend/assets/logo.svg`, `frontend/static/fonts/`
+- One stylesheet with light and dark values that follow the operating system (`prefers-color-scheme`),
+  matching the two Streamlit themes in `.streamlit/config.toml`. Surfaces are translucent over a fixed purple
+  gradient; real backdrop blur is used only where content passes underneath (menus, dialogs, the sidebar on
+  narrow screens), since over a smooth gradient it changes nothing and costs a repaint on every scroll.
+- IBM Plex Sans and IBM Plex Mono are served with the dashboard (SIL Open Font License, `OFL.txt`), so it
+  needs no font host.
 
 #### `.streamlit/config.toml`
-- **Role**: Explicit Streamlit server and theme configuration locking `base = "light"`, preventing browser dark-mode styling conflicts.
+- The light and dark themes, the bundled fonts, static file serving, no usage statistics, and no toolbar menu,
+  so the theme cannot be switched away from the system setting.
 
 ---
 
-### Dashboard Views (`frontend/views/`)
+### Dashboard pages (`frontend/views/`)
 
-#### `frontend/views/overview_page.py`
-- **Role**: High-level SOC operations center.
-- **Features**: Top KPI cards, "Load Sample Dataset" one-click seeding button, Plotly bar chart for source volume, Plotly donut chart for OCSF categories, and recent processing activity table.
+#### `overview_page.py`
+- One screen, no scrolling on a laptop: events stored, share read by a known parser, OCSF checks passed,
+  integrity chain, detections and formats without a parser; then, for the chosen time range (1 h to all),
+  events and denials over time with detections marked, sources and event classes, the newest detections and
+  the most denied addresses. The range ends at the newest stored event. The page refreshes every 30 s.
 
-#### `frontend/views/sources_page.py`
-- **Role**: Appliance registration and onboarding management.
-- **Features**: Active source inventory table, channel status cards (HTTP API, Batch File, UDP Syslog, Cloud Pub/Sub), appliance registration form, and instant interactive ingestion test sandbox.
+#### `sources_page.py`
+- Sources with their event counts, the network inputs, a form to add a source, and a box to send one line
+  through the pipeline and see its hash and OCSF class.
 
-#### `frontend/views/parser_studio_page.py` (USP 1)
-- **Role**: Zero-Touch Parser Studio workspace.
-- **Features**: Sample log input editor, "Generate Candidate Parser" action, candidate rule & OCSF mapping preview, "Run Validation Test Suite" button, test results scorecard (accuracy %, passed/failed, unmapped fields), and the strict Governance Approval Gate.
+#### `parser_studio_page.py`, `new_formats_panel.py`
+- New log formats grouped by structure, learning a parser from one, reviewing each field, approval with the
+  reviewer's name, and re-parsing past lines. A second tab proposes a parser from pasted samples.
 
-#### `frontend/views/pipeline_page.py`
-- **Role**: End-to-end telemetry pipeline visualizer.
-- **Features**: Visual representation of the 6 pipeline stages, latency metrics, format breakdown statistics, 0% drop-off verification, and interactive malformed log testing panel.
+#### `pipeline_page.py`
+- The six stages (receive, archive, parse, normalize, chain, deliver) with measured counts, the parsers used,
+  and the lines no parser could classify.
 
-#### `frontend/views/explorer_page.py`
-- **Role**: Searchable log exploration and drill-down.
-- **Features**: Full-text and IP search bar, faceted filters (Source, Severity, Class), paginated event table, and dual-pane inspector displaying the raw payload with SHA-256 hash alongside the normalized OCSF JSON.
+#### `explorer_page.py`
+- Search and filters over stored events; select a row to see its raw line and SHA-256 beside the OCSF event
+  the outputs send.
 
-#### `frontend/views/integrity_page.py` (USP 2)
-- **Role**: Cryptographic Chain-of-Custody audit center.
-- **Features**: "Run Full Chain Cryptographic Audit" button, verified/breach status banners, execution latency in milliseconds, violation breakdown, and the interactive Controlled Tampering Demo with single-click restoration.
+#### `integrity_page.py`
+- Chain verification with its result and timing, the tamper test (change a record, verify, restore) and the
+  newest chain records, on one screen.
 
-#### `frontend/views/correlation_page.py` (USP 3)
-- **Role**: Cross-source Root Cause Analysis investigation workspace.
-- **Features**: Pivot IP search filter, header with measured counts (events, devices, rules matched), chronological Plotly investigation timeline, and side-by-side evidence separation (Observed Facts vs. rules that matched, with their evidence).
+#### `correlation_page.py`
+- Events from several devices that share an address: a timeline with one lane per device, the observed facts
+  and the rules that linked them, each with its evidence.
 
-#### `frontend/views/schema_page.py`
-- **Role**: OCSF v1.1.0 schema dictionary explorer.
-- **Features**: Reference documentation for OCSF classes (4001, 3002, 2004), interactive attribute dictionary with types and requirement levels, and interactive canonical JSON document viewer.
+#### `schema_page.py`
+- The OCSF classes and fields TRACELOG writes, and an event normalized live from a raw line.
 
-#### `frontend/views/integrations_page.py`
-- **Role**: Connectors page: live inputs and outputs, and setup for devices and destinations.
-- **Features**: Live counters for every input (syslog, HEC, OTLP, files, Kafka) and output (sent, failed, dead-lettered, last error), a "Send test event" button per output, copy-paste device and forwarder configuration with the TRACELOG address filled in, destination setup steps with the matching `config/tracelog.yaml` block, and strict OCSF NDJSON/JSON/CSV downloads.
+#### `integrations_page.py`
+- Connectors: live inputs and outputs with a test event per output, the accounting of every event at every
+  output with the audit report, setup for devices and destinations, and OCSF downloads.
 
-#### `frontend/views/settings_page.py`
-- **Role**: System parameters, policies, and database maintenance.
-- **Features**: Runtime deployment mode indicator (Air-Gapped / Local), governance policy checkboxes, database storage parameters, and single-click database flush/reset action.
+#### `settings_page.py`
+- How the installation is set up, the rules that always apply, and deleting all stored events (one laptop only).
 
 ---
 
@@ -400,18 +404,18 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 
 ## 4. Page-by-Page Dashboard Guide
 
-| Page Name | Primary Objective | User Interactions & Workflows | Backend Endpoints Called |
+| Page | What it is for | What you do there | API calls |
 | :--- | :--- | :--- | :--- |
-| **📊 Overview** | Operational health & KPIs | View total events, active sources, parser accuracy. Click **Load Sample Dataset** to populate data. Inspect Plotly charts. | `GET /api/analytics/overview`<br>`POST /api/ingest/seed-samples` |
-| **🔌 Sources & Onboarding** | Appliance lifecycle | Register new appliances via form. Review channel status. Test individual raw log lines in the interactive sandbox. | `GET /api/sources`<br>`POST /api/sources`<br>`POST /api/ingest/single` |
-| **⚡ Parser Studio** | Zero-touch parser development (USP 1) | Paste sample logs, click **Generate Candidate Parser**. Review rules. Click **Run Validation Test Suite**. Click **Approve Parser**. | `POST /api/parsers/generate`<br>`POST /api/parsers/{id}/test`<br>`POST /api/parsers/{id}/approve` |
-| **🔄 Processing Pipeline** | Telemetry pipeline visibility | Inspect event flow through the 6 stages. Review latency and format distribution. Test error handling on malformed logs. | `GET /api/analytics/overview`<br>`POST /api/ingest/single` |
-| **🔎 Log Explorer** | Log query & raw-to-OCSF inspection | Search logs by IP or free text. Apply source and severity filters. Select any row to see side-by-side raw payload and OCSF JSON. | `GET /api/events`<br>`GET /api/events/{id}` |
-| **🛡️ Integrity & Lineage** | Cryptographic verification (USP 2) | Click **Run Full Chain Cryptographic Audit**. Simulate record tampering in SQLite. Observe immediate chain failure. Click **Restore Record**. | `GET /api/integrity/verify`<br>`POST /api/integrity/tamper`<br>`POST /api/integrity/restore` |
-| **🧬 Correlation & RCA** | Root Cause Analysis (USP 3) | Enter a pivot IP (e.g. `10.0.1.15`), click **Run RCA Correlation**. Inspect Plotly chronological timeline, Observed Facts, and Inferred Hypotheses. | `POST /api/correlation/run`<br>`GET /api/correlation/incidents` |
-| **📐 Schema Explorer** | OCSF standard reference | Browse OCSF classes (4001, 3002, 2004). Search the attribute dictionary. Inspect the interactive canonical JSON document. | Local Schema Reference |
-| **🔗 Integrations** | Downstream data export | Download OCSF JSON or flattened CSV files. Review Splunk HEC and Elastic Logstash forwarder templates. | `GET /api/export/ocsf-json`<br>`GET /api/export/csv` |
-| **⚙️ Settings** | Runtime configuration & maintenance | Review air-gapped deployment status and storage parameters. Click **Reset Database** to flush tables and re-test from scratch. | Direct DB Maintenance API |
+| **Overview** | Everything that needs a glance, on one screen | Pick a time range. Use **Load sample data** on an empty archive. Follow a tile's link to the page behind it. | `GET /api/analytics/overview`<br>`GET /api/analytics/activity`<br>`POST /api/ingest/seed-samples` |
+| **Sources** | Devices and inputs | Add a source by hand. Send one line through the pipeline and see its hash and OCSF class. | `GET /api/sources`<br>`POST /api/sources`<br>`POST /api/ingest/single` |
+| **Parser Studio** | Parsers for formats nobody wrote one for | Pick a new format, **Learn a parser**, confirm the fields that need review, **Approve & apply**, **Re-parse past lines**. | `GET /api/formats`<br>`POST /api/formats/{id}/learn`<br>`POST /api/formats/parsers/{id}/approve` |
+| **Pipeline** | Where each line is | Check the counts at each of the six stages. Send a malformed line. | `GET /api/analytics/overview`<br>`GET /api/analytics/unparsed` |
+| **Log Explorer** | Finding events | Search, filter, then select a row to see its raw line beside its OCSF event. | `GET /api/events`<br>`GET /api/events/{id}` |
+| **Integrity** | Proof that nothing changed | **Verify the chain**. For the demonstration: **Change the record**, verify again, **Restore the record**. | `GET /api/integrity/verify`<br>`POST /api/integrity/tamper`<br>`POST /api/integrity/restore` |
+| **Correlation** | Following one address across devices | Enter an address, select **Correlate**, read the device timeline, the facts and the rules that linked them. | `POST /api/correlation/run` |
+| **Schema** | The OCSF classes and fields | Browse the classes and fields; see an event normalized live. | Local reference |
+| **Connectors** | Inputs, outputs and accounting | Check live counters, send a test event, **Generate audit report**, copy device or destination setup, download OCSF. | `GET /api/connectors`<br>`GET /api/audit/reconcile`<br>`GET /api/audit/report.pdf` |
+| **Settings** | How this installation is set up | Read the settings; delete all stored events on a single laptop. | Direct database access (single laptop only) |
 
 ---
 
@@ -644,6 +648,7 @@ All endpoints return standard JSON responses and are fully documented interactiv
 | `POST` | `/api/integrity/restore` | Restores tampered record | `RestoreRecordRequest` JSON | `{"success": true, ...}` |
 | `POST` | `/api/correlation/run` | Runs cross-source RCA | `RunCorrelationRequest` JSON | `IncidentSummary` |
 | `GET` | `/api/analytics/overview` | Returns system KPIs & counts | None | Operational Metrics Object |
+| `GET` | `/api/analytics/activity` | Events, denials and detections over a time range, with breakdowns | `hours` (0 = all) | Activity object |
 | `GET` | `/api/export/ocsf-json` | Exports OCSF JSON file | `limit` (default: 1000) | Streamed JSON attachment |
 | `GET` | `/api/export/csv` | Exports flattened CSV file | `limit` (default: 1000) | Streamed CSV attachment |
 | `GET` | `/api/connectors` | Live status of every input and output, supported sources and destinations | None | `{"pipeline", "inputs", "outputs", ...}` |
@@ -845,7 +850,7 @@ were, `tests/test_throughput.py` proves it, and the unseen-format score is uncha
 18 missed, **0 wrong**.
 
 To measure it on your own machine, and to set the project up on a machine that has never seen it,
-follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 340 passed), run, and the
+follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 358 passed), run, and the
 three benchmark commands including `-w N` for N ingest shards, each with its own hash chain.
 
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately
