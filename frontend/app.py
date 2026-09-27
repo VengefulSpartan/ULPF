@@ -12,7 +12,7 @@ from frontend.api_client import APIClient
 # Page setup
 st.set_page_config(
     page_title="TRACELOG — Universal Log Pre-processing Framework",
-    page_icon="🛡️",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -39,18 +39,9 @@ from frontend.views.settings_page import render_settings
 with st.sidebar:
     st.markdown(
         """
-        <div style="padding: 10px 4px 14px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
-            <div style="display:flex; align-items:center; gap: 10px;">
-                <div style="background: #0E1E31; width: 34px; height: 34px; border-radius: 6px; display:flex; align-items:center; justify-content:center; border: 1px solid #1E3A5F; flex-shrink: 0;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                    </svg>
-                </div>
-                <div>
-                    <div style="font-size: 1.18rem; font-weight: 800; letter-spacing: 0.5px; color: #FFFFFF; line-height: 1.1;">TRACELOG</div>
-                    <div style="font-size: 0.66rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Universal Log Pre-processing</div>
-                </div>
-            </div>
+        <div style="padding: 12px 6px 14px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
+            <div style="font-size: 1.25rem; font-weight: 800; letter-spacing: 0.8px; color: #FFFFFF; line-height: 1.1;">TRACELOG</div>
+            <div style="font-size: 0.66rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;">Universal Log Pre-processing</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -59,6 +50,47 @@ with st.sidebar:
     st.markdown(
         """
         <style>
+        /* High-Contrast Primary Buttons across the app */
+        .stButton > button[kind="primary"],
+        .stButton > button[data-testid="baseButton-primary"] {
+            background-color: #0284C7 !important;
+            background: linear-gradient(180deg, #0284C7 0%, #0369A1 100%) !important;
+            color: #FFFFFF !important;
+            border: 1px solid #075985 !important;
+            border-radius: 6px !important;
+            font-weight: 700 !important;
+            font-size: 0.88rem !important;
+            padding: 9px 18px !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+            cursor: pointer !important;
+        }
+
+        .stButton > button[kind="primary"] *,
+        .stButton > button[kind="primary"] p,
+        .stButton > button[kind="primary"] span,
+        .stButton > button[kind="primary"] div,
+        .stButton > button[data-testid="baseButton-primary"] *,
+        .stButton > button[data-testid="baseButton-primary"] p,
+        .stButton > button[data-testid="baseButton-primary"] span,
+        .stButton > button[data-testid="baseButton-primary"] div {
+            color: #FFFFFF !important;
+            font-weight: 700 !important;
+            font-size: 0.88rem !important;
+            letter-spacing: 0.2px !important;
+        }
+
+        .stButton > button[kind="primary"]:hover,
+        .stButton > button[data-testid="baseButton-primary"]:hover {
+            background: linear-gradient(180deg, #0369A1 0%, #075985 100%) !important;
+            border-color: #0c4a6e !important;
+            box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35) !important;
+        }
+
+        .stButton > button[kind="primary"]:hover *,
+        .stButton > button[data-testid="baseButton-primary"]:hover * {
+            color: #FFFFFF !important;
+        }
+
         /* Scoped Modern Sidebar Navigation - Enterprise Styling */
         [data-testid="stSidebar"] [data-testid="stRadio"] > div {
             gap: 1px !important;
@@ -292,12 +324,12 @@ with st.sidebar:
         /* 6. Integrity & Lineage */
         [data-testid="stSidebar"] [data-testid="stRadioGroup"] > div:nth-child(6) p::before,
         [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] > div:nth-child(6) p::before {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpolyline points='9 12 11 14 15 10'/%3E%3C/svg%3E") !important;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2' ry='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E") !important;
         }
         [data-testid="stSidebar"] [data-testid="stRadioGroup"] > div:nth-child(6):hover p::before,
         [data-testid="stSidebar"] [data-testid="stRadioGroup"] > div:nth-child(6):has(input:checked) p::before,
         [data-testid="stSidebar"] [data-testid="stRadioGroup"] > div:nth-child(6)[data-selected="true"] p::before {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2338BDF8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpolyline points='9 12 11 14 15 10'/%3E%3C/svg%3E") !important;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2338BDF8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2' ry='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E") !important;
         }
 
         /* 7. Correlation & RCA */
