@@ -2,7 +2,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from frontend import ui
+from frontend import ui, widgets
 from frontend.api_client import APIClient
 
 SEVERITY_ID = {"Informational": 1, "Low": 2, "Medium": 3, "High": 4, "Critical": 5, "Fatal": 6}
@@ -60,6 +60,11 @@ def render_correlation():
         f'<span>Users <b>{ui.esc(", ".join(ent.get("users", [])) or "none")}</b></span>'
         f'<span>Devices <b>{ui.esc(", ".join(ent.get("devices", [])) or "-")}</b></span></div></div>',
         unsafe_allow_html=True)
+    if incident.get("incident_id"):
+        with st.container(horizontal=True, gap="small"):
+            widgets.evidence_bundle("rca-evidence", {"This incident": {"incident_id": incident["incident_id"]}},
+                                    label=f"Evidence bundle ({len(facts)} events)")
+            widgets.certin_report("rca-certin", incident)
 
     by_device = {}
     for f in facts:

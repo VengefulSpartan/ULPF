@@ -55,7 +55,7 @@ the standard library and everything still works, about 5 % slower.
 pytest -q
 ```
 
-**Expect `358 passed`.** If tests fail, stop here — a number from a broken build is worse than no
+**Expect `373 passed`.** If tests fail, stop here — a number from a broken build is worse than no
 number. With Docker installed, `docker compose run --rm --build tests` runs the same suite in Linux: if it
 passes there and fails natively (a Windows laptop, say), the difference is the machine, not the
 code, and [SERVICES.md](SERVICES.md#linux-and-windows) lists what to check.

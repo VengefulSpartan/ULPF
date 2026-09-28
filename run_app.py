@@ -33,12 +33,27 @@ def main():
     print("=" * 65)
     print("  TRACELOG — Universal Log Pre-processing Framework")
     print("=" * 65)
+    # Two witnesses that countersign the collector's checkpoints (backend/witness.py). On one laptop they run
+    # here, each with its own keys and records under data/; in production each runs on another machine.
+    witnesses = []
+    backend_env = dict(os.environ)
+    if "--no-witnesses" not in sys.argv[1:] and not os.environ.get("WITNESS_URLS"):
+        urls = []
+        for i, port in ((1, 8101), (2, 8102)):
+            env = dict(os.environ, WITNESS_ID=f"witness-{i}", WITNESS_DATA_DIR=os.path.join("data", f"witness-{i}"))
+            witnesses.append(subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "backend.witness:app", "--host", "127.0.0.1", "--port", str(port),
+                 "--log-level", "warning"], env=env))
+            urls.append(f"http://127.0.0.1:{port}")
+        backend_env["WITNESS_URLS"] = ",".join(urls)
+        print(f"[*] Started 2 checkpoint witnesses on {', '.join(urls)} (python run_app.py --no-witnesses to skip)")
+
     print(f"[*] Starting FastAPI Backend on {bind}:8000 ...")
     print("    - Local API:   http://localhost:8000 (Docs: http://localhost:8000/docs)")
     if lan:
         print(f"    - Network API: http://{lan_ip}:8000 (Docs: http://{lan_ip}:8000/docs)")
     backend_proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", bind, "--port", "8000"]
+        [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", bind, "--port", "8000"], env=backend_env
     )
     time.sleep(2)
 
@@ -47,7 +62,8 @@ def main():
     if lan:
         print(f"    - Network UI:  http://{lan_ip}:8501")
     frontend_proc = subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", "frontend/app.py", "--server.port", "8501", "--server.address", bind]
+        [sys.executable, "-m", "streamlit", "run", "frontend/app.py", "--server.port", "8501", "--server.address", bind],
+        env=backend_env   # the Settings page lists the witnesses, and runs the backend itself if the API is down
     )
 
     if lan:
@@ -62,6 +78,8 @@ def main():
         print("\n[*] Shutting down TRACELOG...")
         backend_proc.terminate()
         frontend_proc.terminate()
+        for w in witnesses:
+            w.terminate()
         print("[+] Goodbye.")
 
 

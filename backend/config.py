@@ -58,6 +58,31 @@ class Settings(BaseSettings):
     # would fork the hash chain.
     DASHBOARD_DIRECT_MODE: bool = True
 
+    # Signed checkpoints (backend/services/integrity/checkpoints.py): every CHECKPOINT_SIZE chain records
+    # are sealed under one Merkle root signed by this node, and every CHECKPOINT_EVERY_SECONDS the records
+    # not yet sealed are sealed too (0 turns the timer off; the Integrity page and the API can seal on
+    # demand). WITNESS_URLS lists the witness services (backend/witness.py) that countersign each
+    # checkpoint, comma-separated; empty means checkpoints carry this node's signature only.
+    # TRACELOG_KEY_DIR holds the signing keys; empty means a keys folder next to the database.
+    # A checkpoint is about 23 KB (three signers, each Ed25519 + ML-DSA-65 with its public key): per 1,000
+    # records that is about 23 bytes a record, and the timer adds at most 288 a day.
+    CHECKPOINT_SIZE: int = 1000
+    CHECKPOINT_EVERY_SECONDS: int = 300
+    WITNESS_URLS: str = ""
+    TRACELOG_KEY_DIR: str = ""
+
+    # A witness service (backend/witness.py): its name, and where it keeps its keys and what it signed.
+    WITNESS_ID: str = "witness"
+    WITNESS_DATA_DIR: str = ""
+
+    # CERT-In mode (backend/services/compliance/certin.py): the 28 April 2022 directions ask for 180 days
+    # of logs kept within India and incidents reported within 6 hours. On, stored events cannot be deleted
+    # from the dashboard and the retention status is shown. DATA_LOCATION is what the operator declares
+    # about where this archive is kept; TRACELOG cannot check it.
+    CERTIN_MODE: bool = False
+    RETENTION_DAYS: int = 180
+    DATA_LOCATION: str = ""
+
     # Server settings
     BACKEND_HOST: str = "127.0.0.1"
     BACKEND_PORT: int = 8000

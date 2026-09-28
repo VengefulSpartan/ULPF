@@ -36,6 +36,7 @@
 11. [Measured Performance](#11-measured-performance)
 12. [Tested on Real, Third-Party Logs](#12-tested-on-real-third-party-logs)
 13. [AI/ML-Ready Analytics](#13-aiml-ready-analytics)
+14. [Evidence for Audits, Courts and CERT-In](#14-evidence-for-audits-courts-and-cert-in)
 
 ---
 
@@ -226,6 +227,7 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
   - Manages SQLite connection lifecycle and schema migrations.
   - Enables Write-Ahead Logging (`PRAGMA journal_mode=WAL;`), synchronous normal mode, and foreign keys for high concurrency.
   - Creates 7 core tables: `sources`, `parsers`, `raw_logs`, `normalized_events`, `integrity_ledger`, `incidents`, and `audit_tamper_backup`.
+  - Also `checkpoints` (signed Merkle roots over runs of chain records), `tracelog_meta` (the archive's log id, which the witnesses know it by) and `audit_rewrite_backup` (for the history-rewrite demonstration); see [`docs/EVIDENCE.md`](docs/EVIDENCE.md).
 
 #### Format Parsers (`backend/services/parsing/`)
 - **`cef_parser.py`**: Parses ArcSight CEF strings (`CEF:Version|Vendor|Product|Version|ClassID|Name|Severity|Extension`). Handles quoted values, escaped characters, and embedded syslog envelopes.
@@ -410,12 +412,12 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
 | **Sources** | Devices and inputs | Add a source by hand. Send one line through the pipeline and see its hash and OCSF class. | `GET /api/sources`<br>`POST /api/sources`<br>`POST /api/ingest/single` |
 | **Parser Studio** | Parsers for formats nobody wrote one for | Pick a new format, **Learn a parser**, confirm the fields that need review, **Approve & apply**, **Re-parse past lines**. | `GET /api/formats`<br>`POST /api/formats/{id}/learn`<br>`POST /api/formats/parsers/{id}/approve` |
 | **Pipeline** | Where each line is | Check the counts at each of the six stages. Send a malformed line. | `GET /api/analytics/overview`<br>`GET /api/analytics/unparsed` |
-| **Log Explorer** | Finding events | Search, filter, then select a row to see its raw line beside its OCSF event. | `GET /api/events`<br>`GET /api/events/{id}` |
-| **Integrity** | Proof that nothing changed | **Verify the chain**. For the demonstration: **Change the record**, verify again, **Restore the record**. | `GET /api/integrity/verify`<br>`POST /api/integrity/tamper`<br>`POST /api/integrity/restore` |
-| **Correlation** | Following one address across devices | Enter an address, select **Correlate**, read the device timeline, the facts and the rules that linked them. | `POST /api/correlation/run` |
+| **Log Explorer** | Finding events | Search, filter, then select a row to see its raw line beside its OCSF event. **Evidence bundle** exports that event or the events shown. | `GET /api/events`<br>`GET /api/events/{id}`<br>`GET /api/evidence/bundle.zip` |
+| **Integrity** | Proof that nothing changed | **Verify the chain** and **Check the checkpoints** (signed Merkle roots, and what the witnesses signed). Demonstrations: **Change the record** (the chain catches it) and **Rewrite history** as an insider with the server's keys (only the witnesses catch it), each with a restore. | `GET /api/integrity/verify`<br>`GET /api/integrity/checkpoints`<br>`POST /api/integrity/checkpoints/seal`<br>`POST /api/integrity/tamper`<br>`POST /api/integrity/rewrite` |
+| **Correlation** | Following one address across devices | Enter an address, select **Correlate**, read the device timeline, the facts and the rules that linked them. Export the incident's **Evidence bundle**, or a **CERT-In report draft**. | `POST /api/correlation/run`<br>`GET /api/evidence/bundle.zip`<br>`GET /api/compliance/certin/report.pdf` |
 | **Schema** | The OCSF classes and fields | Browse the classes and fields; see an event normalized live. | Local reference |
 | **Connectors** | Inputs, outputs and accounting | Check live counters, send a test event, **Generate audit report**, copy device or destination setup, download OCSF. | `GET /api/connectors`<br>`GET /api/audit/reconcile`<br>`GET /api/audit/report.pdf` |
-| **Settings** | How this installation is set up | Read the settings; delete all stored events on a single laptop. | Direct database access (single laptop only) |
+| **Settings** | How this installation is set up | Read the settings, the checkpoint and witness setup and the CERT-In retention status; delete all stored events on a single laptop (not in CERT-In mode). | `GET /api/compliance/certin/status`; direct database access (single laptop only) |
 
 ---
 
@@ -484,6 +486,9 @@ Record #1 (Genesis)                                   Record #2
 - **Payload Modification**: If a stored raw text or normalized field is altered, the recomputed record hash diverges from the stored hash.
 - **Record Deletion**: If an attacker deletes a record, the sequence numbers exhibit a gap ($\text{seq}_{i} \neq \text{seq}_{i-1} + 1$).
 - **Record Reordering**: If records are swapped, the `prev_hash` pointers break immediately.
+
+#### Beyond the chain: signed checkpoints and witnesses
+Someone with write access to the database could change a record *and* recompute every hash after it. So every 1,000 records (and every five minutes) TRACELOG seals the new records under an RFC 9162 Merkle root, signs it with Ed25519 and ML-DSA-65, and sends it to witness services that countersign it and keep a copy. Resealing a changed history needs the collector's keys, and even then the witnesses refuse to sign a different checkpoint with the same number. [Section 14](#14-evidence-for-audits-courts-and-cert-in) and [`docs/EVIDENCE.md`](docs/EVIDENCE.md) have the details and the demonstration.
 
 ---
 
@@ -621,6 +626,21 @@ CREATE TABLE audit_tamper_backup (
     tampered_json TEXT NOT NULL,
     tampered_at TEXT NOT NULL
 );
+
+-- 8. Checkpoints: a signed Merkle root over a run of chain records (docs/EVIDENCE.md)
+CREATE TABLE checkpoints (
+    idx INTEGER PRIMARY KEY,          -- checkpoint number; each names the previous one's hash
+    log_id TEXT NOT NULL,             -- this archive, as the witnesses know it
+    first_seq INTEGER NOT NULL,
+    last_seq INTEGER NOT NULL,
+    size INTEGER NOT NULL,
+    merkle_root TEXT NOT NULL,        -- RFC 9162 root over "<seq>:<record_hash>" leaves
+    prev_hash TEXT NOT NULL,
+    checkpoint_hash TEXT NOT NULL,    -- SHA-256 of body
+    body TEXT NOT NULL,               -- the exact canonical JSON that was signed
+    signatures TEXT NOT NULL,         -- node and witness signatures: Ed25519, ML-DSA-65
+    created_at TEXT NOT NULL
+);
 ```
 
 ---
@@ -646,6 +666,14 @@ All endpoints return standard JSON responses and are fully documented interactiv
 | `GET` | `/api/integrity/verify` | Runs full hash-chain audit | None | `IntegrityVerificationResult` |
 | `POST` | `/api/integrity/tamper` | Simulates record tampering | `TamperRecordRequest` JSON | `TamperRecordResponse` |
 | `POST` | `/api/integrity/restore` | Restores tampered record | `RestoreRecordRequest` JSON | `{"success": true, ...}` |
+| `GET` | `/api/integrity/checkpoints` | Recomputes every signed checkpoint, checks its signatures and asks the witnesses | `witnesses` (default true) | `{"ok", "checkpoints", "problems", "witnesses", ...}` |
+| `GET` | `/api/integrity/proof/{seq}` | Merkle inclusion proof of one record in its signed checkpoint | None | `{"leaf_index", "tree_size", "path", "checkpoint"}` |
+| `POST` | `/api/integrity/checkpoints/seal` | Seals every record not yet in a checkpoint and asks the witnesses to countersign | None | `{"sealed", "witnesses"}` |
+| `POST` | `/api/integrity/rewrite` | Demonstration: an insider changes a record, recomputes the chain and re-signs | `sequence_num`, `field`, `new_value` | what was changed, the witnesses' answers |
+| `POST` | `/api/integrity/rewrite/restore` | Undoes the rewrite demonstration | None | `{"success": true, ...}` |
+| `GET` | `/api/evidence/bundle.zip` | Evidence bundle: raw lines, events, proofs, signed checkpoints, `verify.py`, Section 63(4) particulars | `seq` (repeat) or `incident_id`; `case_ref`, `prepared_by`, `designation`, `organisation`, `place` | ZIP attachment |
+| `GET` | `/api/compliance/certin/status` | CERT-In mode, days of logs held, incident types | None | Retention status |
+| `GET` | `/api/compliance/certin/report.pdf` | CERT-In incident report draft from a correlation result (also `.json`) | `incident_id`, `types`, reporting-entity fields, `noticed_at` | PDF / JSON attachment |
 | `POST` | `/api/correlation/run` | Runs cross-source RCA | `RunCorrelationRequest` JSON | `IncidentSummary` |
 | `GET` | `/api/analytics/overview` | Returns system KPIs & counts | None | Operational Metrics Object |
 | `GET` | `/api/analytics/activity` | Events, denials and detections over a time range, with breakdowns | `hours` (0 = all) | Activity object |
@@ -850,7 +878,7 @@ were, `tests/test_throughput.py` proves it, and the unseen-format score is uncha
 18 missed, **0 wrong**.
 
 To measure it on your own machine, and to set the project up on a machine that has never seen it,
-follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 358 passed), run, and the
+follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 373 passed), run, and the
 three benchmark commands including `-w N` for N ingest shards, each with its own hash chain.
 
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately
@@ -916,3 +944,28 @@ Four parts, all in [`docs/ML_DATA.md`](docs/ML_DATA.md):
   per-window baseline can see every time, missed the two built to stay under it, and flagged one
   benign nightly backup a day ([`docs/ML_EVALUATION.md`](docs/ML_EVALUATION.md)). These are
   synthetic days; how often it flags benign traffic on a real network is not known until it runs on one.
+
+---
+
+## 14. Evidence for Audits, Courts and CERT-In
+
+Three layers on top of the hash chain, each checkable without trusting TRACELOG
+([`docs/EVIDENCE.md`](docs/EVIDENCE.md) has the full design):
+
+- **Signed checkpoints and witnesses.** Every 1,000 records, and every five minutes, the writer seals the new records
+  under a Merkle root (RFC 9162, checked against RFC 6962's reference values), signs it with Ed25519 and
+  ML-DSA-65 (FIPS 204), and two witness services countersign it and keep their own copy. On the Integrity page,
+  **Rewrite history** plays an insider with the database and the server's keys: the chain check passes, the
+  node's signatures pass, and the witnesses name the checkpoint where the histories part. Sealing costs nothing
+  measurable (2,893 and 2,942 events/s with it, 2,959 and 2,736 without, on `scripts/benchmark.py -n 20000`).
+- **Evidence bundles.** A ZIP of the raw lines as received, the stored events, their chain records, Merkle proofs
+  and signed checkpoints, a `verify.py` that needs only Python, and the particulars a certificate under Section
+  63(4) of the Bharatiya Sakshya Adhiniyam, 2023 asks for (the record, the source, every SHA-256), with the hash
+  report as an annexure. The certificate itself is for the person in charge and an expert to complete and sign.
+- **CERT-In mode** (`CERTIN_MODE=true`). The 180-day retention status, no deletion from the dashboard, and, from
+  any correlation result, a report draft with the Annexure I type (suggested, with the reason), the time it was
+  noticed and the 6-hour deadline, the affected systems, indicators, timeline and the evidence kept. TRACELOG
+  sends nothing to CERT-In.
+
+Limits, stated plainly: none of this proves a device logged the truth or logged everything, and witnesses
+protect only when they run on machines the collector's administrators do not control.

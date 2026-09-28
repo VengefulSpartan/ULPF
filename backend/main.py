@@ -24,18 +24,22 @@ from backend.api.audit import router as audit_router
 from backend.api.formats import router as formats_router
 from backend.api.receivers import router as receivers_router
 from backend.api.ml import router as ml_router
+from backend.api.evidence import router as evidence_router
+from backend.api.compliance import router as compliance_router
+from backend.services.integrity import checkpoints, signing
 from backend.services.ml import baseline
 
 
 # Every API router, mounted under /api. The receivers (HEC, OTLP) are mounted at the root.
 ROUTERS = [sources_router, ingestion_router, parsers_router, events_router, integrity_router, correlation_router,
-           analytics_router, export_router, connectors_router, audit_router, formats_router, ml_router]
+           analytics_router, export_router, connectors_router, audit_router, formats_router, ml_router,
+           evidence_router, compliance_router]
 
 # What the query service serves: the GET requests of these routers, which read the archive and never
 # change it (tests/test_services.py checks each one against a read-only database). /connectors is
 # not here: it reports the collector's live inputs and outputs, which only the collector has.
 QUERY_ROUTERS = ("/events", "/integrity", "/analytics", "/export", "/audit", "/correlation", "/ml", "/formats",
-                 "/sources", "/parsers")
+                 "/sources", "/parsers", "/evidence", "/compliance")
 
 
 def _reads_only(router: APIRouter) -> APIRouter:
@@ -52,7 +56,12 @@ async def collector_lifespan(_app: FastAPI):
     await engine.start()
     detector = baseline.Schedule(settings.BASELINE_EVERY_MINUTES).start() if settings.BASELINE_EVERY_MINUTES > 0 \
         else None
+    # seal what is not yet in a signed checkpoint and ask the witnesses to countersign it
+    sealer = checkpoints.Schedule(settings.CHECKPOINT_EVERY_SECONDS).start() \
+        if settings.CHECKPOINT_EVERY_SECONDS > 0 and signing.HAVE_CRYPTO else None
     yield
+    if sealer:
+        sealer.stop()
     if detector:
         detector.stop()
     await engine.stop()

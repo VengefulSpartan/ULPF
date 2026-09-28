@@ -29,7 +29,9 @@ READ_PATHS = ["/api/events", "/api/events?q=10.20.4.5", "/api/integrity/verify",
               "/api/analytics/overview", "/api/analytics/unparsed", "/api/export/csv", "/api/export/ocsf-json",
               "/api/audit/reconcile", "/api/audit/report.json", "/api/audit/delivery/verify",
               "/api/correlation/incidents", "/api/ml/contract", "/api/ml/features?hours=48", "/api/formats",
-              "/api/sources", "/api/parsers", "/api/analytics/activity?hours=24"]
+              "/api/sources", "/api/parsers", "/api/analytics/activity?hours=24",
+              "/api/integrity/checkpoints?witnesses=false", "/api/evidence/bundle.zip?seq=1&seq=2",
+              "/api/compliance/certin/status"]
 
 
 def routes(app):

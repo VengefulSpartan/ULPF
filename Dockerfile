@@ -37,7 +37,7 @@ WORKDIR /app
 # The code belongs to root and is read-only to the service; only data/ is writable, and
 # docker-compose.yml mounts a volume there.
 COPY . .
-RUN mkdir -p /app/data && chown tracelog:tracelog /app/data
+RUN mkdir -p /app/data /app/witness && chown tracelog:tracelog /app/data /app/witness
 
 USER tracelog
 

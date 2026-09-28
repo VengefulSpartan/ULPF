@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.services import jsonio
+from backend.services.integrity import checkpoints
 from backend.services.integrity.hasher import Hasher
 from backend.services.integrity.ledger import IntegrityLedger
 from backend.services.normalization.ocsf_export import to_ocsf
@@ -347,6 +348,13 @@ class StreamIngestor:
                 except Exception:  # counting formats must never cost a log line
                     logger.exception("could not update the format registry")
             conn.commit()
+            # every CHECKPOINT_SIZE records, a signed checkpoint (the timer seals the rest and asks the witnesses)
+            try:
+                if checkpoints.seal_in(conn):
+                    conn.commit()
+            except Exception:  # sealing must never cost a log line: the records are chained, the timer retries
+                conn.rollback()
+                logger.exception("could not seal a checkpoint")
         self._batches += 1
         if self._batches % self.OPTIMIZE_EVERY == 0:
             database.optimize()

@@ -352,6 +352,120 @@ class APIClient:
         except Exception as exc:
             return {"state": "error", "error": f"API server not reachable: {exc}"}
 
+    # ---- signed checkpoints, evidence bundles, CERT-In ---------------------------------------
+    @staticmethod
+    def _download(path: str, params, local) -> Dict[str, Any]:
+        """A file from the API: {"ok", "data", "filename", "headers"} or {"ok": False, "error"}. When the API
+        does not answer (and this dashboard may run the backend itself), `local()` makes it here."""
+        try:
+            r = requests.get(f"{BASE_URL}{path}", params=params, timeout=120.0)
+        except Exception:
+            try:
+                _direct_mode()
+                return {"ok": True, **local()}
+            except BackendUnreachable as exc:
+                return {"ok": False, "error": str(exc)}
+            except ValueError as exc:
+                return {"ok": False, "error": str(exc)}
+        if r.status_code != 200:
+            try:
+                detail = r.json().get("detail")
+            except Exception:
+                detail = r.text[:300]
+            return {"ok": False, "error": detail or f"HTTP {r.status_code}"}
+        cd = r.headers.get("content-disposition", "")
+        name = cd.split("filename=")[-1].strip('"') if "filename=" in cd else path.rsplit("/", 1)[-1]
+        return {"ok": True, "data": r.content, "filename": name, "headers": dict(r.headers)}
+
+    @staticmethod
+    def _call(method: str, path: str, local, json_body=None, params=None, timeout: float = 30.0) -> Dict[str, Any]:
+        """JSON from the API, or {"error": ...}; runs `local()` in-process when the API does not answer."""
+        try:
+            r = requests.request(method, f"{BASE_URL}{path}", json=json_body, params=params, timeout=timeout)
+        except Exception:
+            try:
+                _direct_mode()
+                return local()
+            except BackendUnreachable as exc:
+                return {"error": str(exc)}
+            except (ValueError, RuntimeError) as exc:
+                return {"error": str(exc)}
+        if r.status_code == 200:
+            return r.json()
+        try:
+            detail = r.json().get("detail")
+        except Exception:
+            detail = r.text[:300]
+        return {"error": detail or f"HTTP {r.status_code}"}
+
+    @classmethod
+    def get_checkpoints(cls, witnesses: bool = True) -> Dict[str, Any]:
+        def local():   # imported here: the dashboard container has no database to open
+            from backend.services.integrity import checkpoints
+            return checkpoints.verify(ask_witnesses=witnesses)
+        return cls._call("GET", "/integrity/checkpoints", local, params={"witnesses": witnesses})
+
+    @classmethod
+    def seal_checkpoints(cls) -> Dict[str, Any]:
+        def local():
+            from backend.api.integrity import seal_checkpoints
+            return seal_checkpoints()
+        return cls._call("POST", "/integrity/checkpoints/seal", local)
+
+    @classmethod
+    def rewrite_history(cls, sequence_num: int, value: str) -> Dict[str, Any]:
+        body = {"sequence_num": sequence_num, "field": "disposition", "new_value": value}
+
+        def local():
+            from backend.api.integrity import RewriteRequest, rewrite_history
+            return rewrite_history(RewriteRequest(**body))
+        return cls._call("POST", "/integrity/rewrite", local, json_body=body)
+
+    @classmethod
+    def restore_history(cls) -> Dict[str, Any]:
+        def local():
+            from backend.services.integrity import checkpoints
+            return checkpoints.restore_history()
+        return cls._call("POST", "/integrity/rewrite/restore", local)
+
+    @classmethod
+    def evidence_bundle(cls, sequences: Optional[List[int]] = None, incident_id: Optional[str] = None,
+                        case: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        params = {"seq": sequences or None, "incident_id": incident_id, **(case or {})}
+
+        def local():
+            from backend.services.evidence import bundle
+            seqs, scope = sequences or [], {"kind": "records"}
+            if incident_id:
+                found = bundle.incident_sequences(incident_id)
+                seqs, scope = found["sequences"], {"kind": "incident", "incident_id": incident_id,
+                                                   "title": found["title"]}
+            made = bundle.build(seqs, case=case, scope=scope)
+            return {"data": made["zip"], "filename": made["filename"],
+                    "headers": {"x-evidence-bundle": made["id"], "x-manifest-sha256": made["manifest_sha256"]}}
+        return cls._download("/evidence/bundle.zip", {k: v for k, v in params.items() if v}, local)
+
+    @classmethod
+    def certin_status(cls) -> Dict[str, Any]:
+        def local():
+            from backend.api.compliance import certin_status
+            return certin_status()
+        return cls._call("GET", "/compliance/certin/status", local, timeout=10.0)
+
+    @classmethod
+    def certin_report(cls, incident_id: str, fmt: str, org: Dict[str, str], types: List[str]) -> Dict[str, Any]:
+        params = {"incident_id": incident_id, "types": types or None, **{k: v for k, v in org.items() if v}}
+
+        def local():
+            import json as _json
+            from backend.services.compliance import certin
+            r = certin.draft_report(incident_id, org=org, types=types)
+            if fmt == "pdf":
+                from backend.services.compliance.certin_pdf import render_report
+                return {"data": render_report(r), "filename": f"{r['report_id']}.pdf"}
+            return {"data": _json.dumps(r, indent=2, ensure_ascii=False).encode(), "filename": f"{r['report_id']}.json"}
+        return cls._download(f"/compliance/certin/report.{fmt}", {k: v for k, v in params.items() if v}, local)
+
     # ---- reconciliation and audit report ----------------------------------------------------
     @classmethod
     def get_reconciliation(cls) -> Optional[Dict[str, Any]]:

@@ -1,7 +1,7 @@
 # TRACELOG as services
 
-`docker compose up -d --build` runs TRACELOG as five services, each in its own container, all from
-one image except the gateway. The same containers run on Linux, macOS and Windows (Docker
+`docker compose up -d --build` runs TRACELOG as five services and two witnesses, each in its own container,
+all from one image except the gateway. The same containers run on Linux, macOS and Windows (Docker
 Desktop): the code always runs on Linux with Python 3.11, whatever the laptop has installed, which
 is what makes a test result on one machine hold on another.
 
@@ -17,15 +17,22 @@ flowchart LR
     query -. "read-only" .-> db
     detector -. "read-only" .-> db
     collector --> out["Splunk, Elastic, Sentinel,<br/>QRadar, Loki, OTLP, files"]
+    collector -- "each signed checkpoint" --> w1["witness-1"]
+    collector -- "each signed checkpoint" --> w2["witness-2"]
+    query -. "what did you sign?" .-> w1
 ```
 
 | Service | Runs | Can write the archive | Published ports |
 |---|---|---|---|
 | `gateway` | nginx: the one address for HTTP; sends each request to the service that answers it | no | 8000 |
 | `collector` | syslog, HEC, OTLP, file and Kafka inputs; the writer that archives, parses, normalises and chains every line; the outputs; every request that changes data (uploads, parser approval and re-parse, dead-letter replay, the tamper demo) | **yes, the only one** | 514/udp, 514/tcp, 5514, 6514 |
-| `query` | the read-only API: search, event detail, chain verification, ledger, analytics, exports, audit reports, RCA incidents, ML contract and features | no: its database connection is read-only | none (through the gateway) |
+| `query` | the read-only API: search, event detail, chain and checkpoint verification, ledger, analytics, exports, evidence bundles, audit reports, RCA incidents, CERT-In report drafts, ML contract and features | no: its database connection is read-only | none (through the gateway) |
 | `detector` | the ML baseline: scores each 5-minute window as it closes and sends its flags to the collector | no: read-only; its findings are written by the collector | none |
+| `witness-1`, `witness-2` | countersign each checkpoint the collector seals and keep their own copy; refuse a different checkpoint with a number they already signed (`backend/witness.py`, [EVIDENCE.md](EVIDENCE.md)) | no: they never see the archive, only checkpoint bodies | none |
 | `dashboard` | the Streamlit UI; talks to the gateway only and has no database | no | 8501 |
+
+The witnesses run beside the collector here to show how it works; they protect the archive only when
+they run on machines its administrators do not control (see [EVIDENCE.md](EVIDENCE.md)).
 
 Two more are started only when asked for: `tests` (`docker compose run --rm --build tests`) and the live
 sensor (`docker compose --profile sensor up -d`: a web server, Suricata watching it and a traffic
@@ -56,7 +63,7 @@ prove; it stays in one process.
 
 ```bash
 cp .env.example .env                      # optional: tokens for outputs, settings
-docker compose up -d --build              # builds tracelog:latest, pulls nginx:alpine, starts the five services
+docker compose up -d --build              # builds tracelog:latest, pulls nginx:alpine, starts the five services and two witnesses
 docker compose ps                         # each should say "healthy" (about a minute on the first start)
 ```
 

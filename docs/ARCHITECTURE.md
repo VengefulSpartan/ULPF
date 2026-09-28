@@ -70,7 +70,15 @@ flowchart TB
     LED[("integrity_ledger<br/>event hash chain")]
     FMT[("log_formats · parsers<br/>format registry")]
     DLED[("delivery ledger<br/>hash-chained outcomes")]
-    RAW ~~~ EVT ~~~ LED ~~~ FMT ~~~ DLED
+    CKP[("checkpoints<br/>Merkle root per 1,000 records<br/>signed Ed25519 + ML-DSA-65")]
+    RAW ~~~ EVT ~~~ LED ~~~ FMT ~~~ DLED ~~~ CKP
+  end
+
+  subgraph WIT["Witnesses on other machines  [witness.py]"]
+    direction LR
+    W1["witness-1<br/>own keys · own copy"]
+    W2["witness-2<br/>signs only a checkpoint that<br/>extends the ones it signed"]
+    W1 ~~~ W2
   end
 
   subgraph OUT["Outputs: own queue, batching, retries each  [connectors/outputs]"]
@@ -93,7 +101,7 @@ flowchart TB
     direction LR
     DASH["Streamlit dashboard :8501"]
     API["FastAPI :8000<br/>REST · Swagger UI served locally"]
-    SVC["Chain verification and tamper detection<br/>Reconciliation · audit report PDF / JSON<br/>Parser Studio: learn → review → approve → re-parse<br/>Correlation rules with their evidence<br/>Baseline detector: 5-minute features → Detection Findings"]
+    SVC["Chain and checkpoint verification, tamper and rewrite detection<br/>Evidence bundles with verify.py · Section 63(4) particulars<br/>CERT-In mode: 180-day retention, 6-hour report drafts<br/>Reconciliation · audit report PDF / JSON<br/>Parser Studio: learn → review → approve → re-parse<br/>Correlation rules with their evidence<br/>Baseline detector: 5-minute features → Detection Findings"]
     DASH --> API --> SVC
   end
 
@@ -105,13 +113,14 @@ flowchart TB
   OUT --> DEST
   OUT -. "every outcome" .-> DB
   DB <--> OPS
+  DB -. "each checkpoint" .-> WIT
 
   classDef store fill:#eaf2fb,stroke:#3b6ea5,color:#10263d
   classDef step fill:#fff6e5,stroke:#b7791f,color:#3d2a07
   classDef ext fill:#eef6ee,stroke:#4a7a4a,color:#16301a
-  class RAW,EVT,LED,FMT,DLED,SPOOL,DL store
+  class RAW,EVT,LED,FMT,DLED,CKP,SPOOL,DL store
   class KEEP,PARSE,NORM,LINK step
-  class FW,IDS,MISC,FWD,SIEM,LAKE ext
+  class FW,IDS,MISC,FWD,SIEM,LAKE,W1,W2 ext
 ```
 
 ## The components
@@ -164,4 +173,4 @@ telemetry is off ([AIRGAP.md](AIRGAP.md)). Outputs connect only to the destinati
 | Formats with no parser | 85 correct, 18 missed, 0 wrong; learned parsers then fill 2,200 of 2,200 fields on new lines | `python scripts/evaluate_unseen_formats.py --learned` |
 | Throughput | 2,300–2,700 events/s per process on 2 vCPUs, archive, parse, OCSF and chain included; 4,866 with two shards | `python scripts/benchmark.py -n 20000 -b 1000 [-w 2]` |
 | Baseline detector, synthetic days | 3 seeds, 8 injected attacks each: the 6 a per-window baseline can see caught every time, the 2 built to stay under it missed; 1 false flag a day, a nightly backup; every finding valid OCSF and chained | `python scripts/evaluate_baseline.py`, report in [ML_EVALUATION.md](ML_EVALUATION.md) |
-| Tests | 358 passing | `pytest -q` |
+| Tests | 373 passing | `pytest -q` |

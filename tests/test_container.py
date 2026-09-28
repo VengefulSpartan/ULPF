@@ -25,7 +25,7 @@ def test_compose_runs_each_process_unprivileged_and_read_only():
     import yaml
     services = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))["services"]
     ours = {name: svc for name, svc in services.items() if "sensor" not in svc.get("profiles", [])}
-    assert set(ours) == {"gateway", "collector", "query", "detector", "dashboard", "tests"}
+    assert set(ours) == {"gateway", "collector", "query", "detector", "witness-1", "witness-2", "dashboard", "tests"}
     for name, svc in ours.items():
         assert svc["read_only"] is True and svc["cap_drop"] == ["ALL"], name
         assert "no-new-privileges:true" in svc["security_opt"], name

@@ -2,6 +2,7 @@ import sqlite3
 import json
 import logging
 import threading
+import uuid
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from backend.config import settings
@@ -296,6 +297,39 @@ class Database:
             );
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_revisions_raw ON event_revisions (raw_id);")
+
+            # 11. Signed checkpoints over the chain (backend/services/integrity/checkpoints.py). One row covers
+            # a run of consecutive chain records with a Merkle root; `body` is the exact text that was signed
+            # and `signatures` the node's and the witnesses' signatures over it.
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS checkpoints (
+                idx INTEGER PRIMARY KEY,
+                log_id TEXT NOT NULL,
+                first_seq INTEGER NOT NULL,
+                last_seq INTEGER NOT NULL,
+                size INTEGER NOT NULL,
+                merkle_root TEXT NOT NULL,
+                prev_hash TEXT NOT NULL,
+                checkpoint_hash TEXT NOT NULL,
+                body TEXT NOT NULL,
+                signatures TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """)
+            # The history-rewrite demonstration keeps what it changed here, so it can be put back.
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS audit_rewrite_backup (
+                id INTEGER PRIMARY KEY,
+                sequence_num INTEGER NOT NULL,
+                data_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """)
+            # Facts about this archive. log_id names this archive's chain to the witnesses: a new
+            # database (or a reset) is a new log, and the witnesses keep what they signed for the old one.
+            cursor.execute("CREATE TABLE IF NOT EXISTS tracelog_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+            cursor.execute("INSERT OR IGNORE INTO tracelog_meta (key, value) VALUES ('log_id', ?)",
+                           (str(uuid.uuid4()),))
 
             # Migration: chain-of-custody metadata for streamed logs. raw_encoding
             # records how raw bytes were decoded, so raw_text.encode(raw_encoding)

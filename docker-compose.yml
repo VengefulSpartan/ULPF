@@ -4,6 +4,8 @@
 #   collector  syslog/HEC/OTLP/file/Kafka inputs, the one writer (archive, OCSF, hash chain), outputs
 #   query      read-only API: search, chain verification, audit reports, exports, RCA, ML features
 #   detector   the ML baseline: reads the archive, sends its findings to the collector to be chained
+#   witness-1, witness-2  countersign the collector's checkpoints and keep a copy (backend/witness.py);
+#              in production each runs on a machine the collector's administrators do not control
 #   dashboard  the Streamlit UI (:8501), which talks to the gateway only
 #
 #   docker compose up -d --build              # the five services
@@ -85,6 +87,9 @@ services:
       <<: *settings
       SERVICE_ROLE: collector
       TRACELOG_CONFIG: /app/config/tracelog.yaml
+      WITNESS_URLS: http://witness-1:8000,http://witness-2:8000   # they countersign every checkpoint
+      CERTIN_MODE: ${CERTIN_MODE:-false}
+      DATA_LOCATION: ${DATA_LOCATION:-}
       BASELINE_EVERY_MINUTES: "0"            # the detector service scores the windows
       # Secrets referenced as ${VAR} in config/tracelog.yaml; set them in .env (never committed,
       # never copied into the image: see .dockerignore).
@@ -110,6 +115,9 @@ services:
       <<: *settings
       SERVICE_ROLE: query
       DB_READ_ONLY: "true"
+      WITNESS_URLS: http://witness-1:8000,http://witness-2:8000   # checkpoint verification asks them
+      CERTIN_MODE: ${CERTIN_MODE:-false}
+      DATA_LOCATION: ${DATA_LOCATION:-}
     depends_on:
       collector:
         condition: service_healthy           # the collector creates the database
@@ -129,6 +137,26 @@ services:
       collector:
         condition: service_healthy
 
+  witness-1:
+    image: tracelog:latest
+    <<: *hardening
+    command: ["uvicorn", "backend.witness:app", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - witness-1-data:/app/witness          # its own keys and what it signed; nothing of the archive
+    environment:
+      WITNESS_ID: witness-1
+      WITNESS_DATA_DIR: /app/witness
+
+  witness-2:
+    image: tracelog:latest
+    <<: *hardening
+    command: ["uvicorn", "backend.witness:app", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - witness-2-data:/app/witness
+    environment:
+      WITNESS_ID: witness-2
+      WITNESS_DATA_DIR: /app/witness
+
   dashboard:
     image: tracelog:latest
     <<: *hardening
@@ -139,6 +167,7 @@ services:
       BACKEND_HOST: gateway
       BACKEND_PORT: "8000"
       DASHBOARD_DIRECT_MODE: "false"         # no database here: when the API is down it says so
+      CERTIN_MODE: ${CERTIN_MODE:-false}
     depends_on:
       gateway:
         condition: service_healthy
@@ -209,3 +238,5 @@ services:
 volumes:
   tracelog-data:
   suricata-logs:
+  witness-1-data:
+  witness-2-data:

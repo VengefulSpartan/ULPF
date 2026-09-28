@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from frontend import ui
+from frontend import ui, widgets
 from frontend.api_client import APIClient
 
 SEVERITIES = ["All", "Critical", "High", "Medium", "Low", "Informational"]
@@ -62,6 +62,11 @@ def render_explorer():
                     f'<span>Source <b>{ui.esc(sel_event.get("source_name"))}</b></span></div>'
                     f'<div class="tl-hash" style="margin-top:6px">SHA-256 {ui.esc(sel_event.get("raw_hash"))}</div>',
                     unsafe_allow_html=True)
+        seq = sel_event.get("sequence_num")
+        widgets.evidence_bundle("ex-evidence", {
+            f"Event #{seq}": {"sequences": [seq]},
+            f"The {len(events)} shown": {"sequences": [e.get("sequence_num") for e in events]},
+        })
         unmapped = sel_event.get("unmapped", {})
         if unmapped:
             with st.expander("Fields not mapped to OCSF"):

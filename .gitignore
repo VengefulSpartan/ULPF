@@ -20,6 +20,9 @@ data/export/
 data/dead_letter/
 data/spool/
 data/state/
+# Signing keys (checkpoints) and the local witnesses' keys and records: never committed
+data/keys/
+data/witness*/
 .data/
 suricata-logs/
 
