@@ -43,3 +43,6 @@ data/public_samples/
 
 # scripts/run_all_checks.py writes one folder per run here
 results/
+
+# Local working notes, screenshots and exports: kept out of the repository
+Project outputs/
