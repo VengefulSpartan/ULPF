@@ -6,6 +6,7 @@
 # Secrets. They reach the container as environment variables at run time, never through a layer.
 .env
 .env.*
+.streamlit/secrets.toml
 !.env.example
 **/*.pem
 **/*.key

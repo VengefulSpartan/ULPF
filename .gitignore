@@ -1,6 +1,7 @@
 # Secrets (keep the template)
 .env
 .env.*
+.streamlit/secrets.toml
 !.env.example
 
 # Python

@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from backend.config import settings
 from frontend import ui
 from frontend.api_client import APIClient
 
@@ -52,6 +53,8 @@ def render_sources():
         else:
             st.markdown(_channels(conn), unsafe_allow_html=True)
             st.caption("A new device is added here on its first message. Setup for each vendor is on the Connectors page.")
+            if settings.HOSTED_DEMO:
+                st.caption(ui.HOSTED_INPUTS_NOTE)
 
     with tab_add:
         with st.form("add_source_form", border=False):

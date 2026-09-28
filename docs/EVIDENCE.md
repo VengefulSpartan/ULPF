@@ -67,9 +67,10 @@ checkpoint where their copies and the archive differ.
 
 **Where they run.** Docker Compose starts `witness-1` and `witness-2` beside the collector, each with its
 own volume, and `python run_app.py` starts two on ports 8101 and 8102 with their records in
-`data/witness-1` and `data/witness-2`. That shows the mechanism. The protection comes from running them on
-machines the collector's administrators do not control (another team's server, another site), since a
-witness on the same host shares its fate.
+`data/witness-1` and `data/witness-2`, and a hosted demo (`HOSTED_DEMO=true`, README section 8.7) starts
+two on threads of the dashboard's own process. That shows the mechanism. The protection comes from running
+them on machines the collector's administrators do not control (another team's server, another site), since
+a witness on the same host shares its fate.
 
 **Resetting the archive** (Settings, single laptop only) starts a new log: the witnesses keep what they
 signed for the old one.

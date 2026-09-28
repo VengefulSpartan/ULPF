@@ -96,8 +96,20 @@ def page_header(title: str, meta: str = "", dot: Optional[str] = None, controls:
     return right.container(horizontal=True, horizontal_alignment="right", vertical_alignment="center", gap="small")
 
 
-def status_block(online: bool, direct: bool, host: str, port: int) -> str:
-    if online:
+# What a hosted demo (backend/hosted_demo.py) cannot do, said where it matters.
+HOSTED_INPUTS_NOTE = ("Hosted demo: these inputs listen inside this app's container, so no device on the internet "
+                      "can reach them. To receive logs from devices, run TRACELOG on your own network "
+                      "(python run_app.py, or Docker).")
+HOSTED_WITNESSES_NOTE = ("Hosted demo: both witnesses run inside this app's container. That shows how witnessing "
+                         "works; witnesses protect an archive only on machines its administrators do not control.")
+
+
+def status_block(online: bool, direct: bool, host: str, port: int, hosted: Optional[dict] = None) -> str:
+    if online and hosted is not None:
+        loading = hosted.get("data") == "loading"
+        state, dot = "API connected", "good"
+        sub = "hosted demo, loading the demo data" if loading else "hosted demo, inside this app"
+    elif online:
         state, dot, sub = "API connected", "good", f"{esc(host)}:{port}"
     elif direct:
         state, dot, sub = "Running without the API", "warning", "this window reads the database directly"

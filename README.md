@@ -115,6 +115,9 @@ Every source file in ULPF has a modular, dedicated responsibility. Below is the 
   - Configures `BACKEND_HOST`, `BACKEND_PORT` (8000), `FRONTEND_PORT` (8501), and `ENVIRONMENT` (`local`).
   - Contains optional placeholders for cloud LLM API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`), ensuring 100% offline air-gapped operation when empty.
 
+#### `backend/hosted_demo.py`
+- **Role**: With `HOSTED_DEMO=true`, starts the API and two witnesses on threads of the dashboard's own process, for hosts that run only `streamlit run` (Streamlit Community Cloud), and loads the demo data into an empty archive. For showing TRACELOG, not for keeping logs: [section 8.7](#7-a-hosted-demo-on-streamlit-community-cloud).
+
 ---
 
 ### Data Models (`backend/models/`)
@@ -752,6 +755,20 @@ TRACELOG runs as five services, one per container ([docs/SERVICES.md](docs/SERVI
 
 **Air-gapped networks.** Nothing TRACELOG serves loads from the internet (Swagger UI ships in the image) and the dashboard sends no usage statistics. Build the image where there is internet, carry it across with `docker save` / `docker load`, and run it with no outbound access: [docs/AIRGAP.md](docs/AIRGAP.md).
 
+### 7. A Hosted Demo on Streamlit Community Cloud
+Streamlit Community Cloud runs one command, `streamlit run`, so on its own it would give the dashboard without the API. With `HOSTED_DEMO` on, the dashboard starts the API and two witnesses inside its own process, on threads, the first time someone opens it ([backend/hosted_demo.py](backend/hosted_demo.py)), and loads the demo data when the archive is empty: the multi-vendor samples, 150 WatchGuard lines for Parser Studio and a synthetic day of FortiGate traffic with 8 attacks, sealed and countersigned (about half a minute).
+
+1. On share.streamlit.io, **Create app** from this repository, branch `main`, main file **`frontend/app.py`** (the bundled fonts are served from the folder next to the main file).
+2. Under **Advanced settings**, choose Python 3.11 and put in **Secrets** (with the quotes: Streamlit makes only text, not `true`, into an environment variable):
+   ```toml
+   HOSTED_DEMO = "true"
+   CERTIN_MODE = "true"
+   DATA_LOCATION = "Demo instance on Streamlit Community Cloud"
+   ```
+3. Deploy, open the app, and wait for the sidebar to change from *hosted demo, loading the demo data* to *hosted demo, inside this app*.
+
+What a hosted demo is not, and the dashboard says so where it applies: its syslog and HTTP inputs listen inside the container, so no device on the internet can reach them; its witnesses share the container with the collector, so they show how witnessing works and protect nothing; and everything (archive, keys, witness records) is on the container's disk, gone when Streamlit restarts or wakes the app. Everyone who opens the link shares one archive. To keep logs, run TRACELOG with Docker (section 6) or `python run_app.py` on your own network.
+
 ---
 
 ## 9. Plug-and-Play Connectors
@@ -878,7 +895,7 @@ were, `tests/test_throughput.py` proves it, and the unseen-format score is uncha
 18 missed, **0 wrong**.
 
 To measure it on your own machine, and to set the project up on a machine that has never seen it,
-follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 373 passed), run, and the
+follow [`docs/RUNBOOK.md`](docs/RUNBOOK.md): install, verify (`pytest -q` → 377 passed), run, and the
 three benchmark commands including `-w N` for N ingest shards, each with its own hash chain.
 
 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) explains what each change was, what was deliberately

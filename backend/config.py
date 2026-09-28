@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # would fork the hash chain.
     DASHBOARD_DIRECT_MODE: bool = True
 
+    # Hosted demo (backend/hosted_demo.py), for a host that runs only `streamlit run frontend/app.py`, such
+    # as Streamlit Community Cloud: the dashboard starts the API and two witnesses in its own process, and
+    # loads the demo data when the archive is empty. Not for real use: nothing outside the container can
+    # send it logs, the witnesses share its machine, and a restart loses everything.
+    HOSTED_DEMO: bool = False
+
     # Signed checkpoints (backend/services/integrity/checkpoints.py): every CHECKPOINT_SIZE chain records
     # are sealed under one Merkle root signed by this node, and every CHECKPOINT_EVERY_SECONDS the records
     # not yet sealed are sealed too (0 turns the timer off; the Integrity page and the API can seal on

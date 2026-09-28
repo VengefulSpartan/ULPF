@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
 
+from backend.config import settings
 from frontend import ui
 from frontend.api_client import APIClient
 
@@ -99,6 +100,8 @@ def _checkpoint_kpis() -> dict:
                  f"<span>{ui.num(cp.get('unsealed_records', 0))} waiting · {ui.num(n)} checkpoints</span>")
         + ui.kpi("Signatures", algs, f"<span>node key {ui.esc(cp.get('node_key_id') or '-')}</span>")
         + witness + "</div>", unsafe_allow_html=True)
+    if settings.HOSTED_DEMO and configured:
+        st.caption(ui.HOSTED_WITNESSES_NOTE)
     for p in problems:
         st.error((f"**Checkpoint #{p['index']}**: " if p.get("index") else "") + p["problem"])
     return cp

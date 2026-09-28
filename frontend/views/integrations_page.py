@@ -61,6 +61,8 @@ def _live_status():
     ]), unsafe_allow_html=True)
 
     _sub("Inputs: where logs arrive")
+    if settings.HOSTED_DEMO:
+        st.caption(ui.HOSTED_INPUTS_NOTE)
     rows = []
     for i in status["inputs"]:
         rows.append({"Input": i.get("name"), "Type": i.get("type"),

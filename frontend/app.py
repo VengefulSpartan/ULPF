@@ -56,6 +56,18 @@ PAGES = {
 page = st.navigation(PAGES, expanded=True)
 
 
+hosted = None
+if settings.HOSTED_DEMO:
+    # Streamlit Community Cloud runs only this script: start the API and two witnesses beside it, once per
+    # process (backend/hosted_demo.py). The dict it returns keeps changing as the demo data loads.
+    @st.cache_resource(show_spinner="Starting the TRACELOG API and two witnesses…")
+    def _start_hosted_demo():
+        from backend import hosted_demo
+        return hosted_demo.start()
+
+    hosted = _start_hosted_demo()
+
+
 @st.cache_data(ttl=5, show_spinner=False)
 def _api_online() -> bool:
     return APIClient.is_backend_online()
@@ -63,8 +75,8 @@ def _api_online() -> bool:
 
 is_online = _api_online()
 with st.sidebar:
-    st.markdown(ui.status_block(is_online, settings.DASHBOARD_DIRECT_MODE, settings.BACKEND_HOST, settings.BACKEND_PORT),
-                unsafe_allow_html=True)
+    st.markdown(ui.status_block(is_online, settings.DASHBOARD_DIRECT_MODE, settings.BACKEND_HOST, settings.BACKEND_PORT,
+                                hosted=hosted), unsafe_allow_html=True)
 
 if not is_online and not settings.DASHBOARD_DIRECT_MODE:
     # the containers: the dashboard never runs the backend itself (frontend/api_client.py says why)
