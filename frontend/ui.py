@@ -109,6 +109,9 @@ def status_block(online: bool, direct: bool, host: str, port: int, hosted: Optio
         loading = hosted.get("data") == "loading"
         state, dot = "API connected", "good"
         sub = "hosted demo, loading the demo data" if loading else "hosted demo, inside this app"
+    elif hosted is not None:   # HOSTED_DEMO is on, but its API is not answering: say why
+        reason = hosted.get("error") or "still starting, or stopped"
+        state, dot, sub = "Hosted demo: API not running", "critical", esc(reason[:160])
     elif online:
         state, dot, sub = "API connected", "good", f"{esc(host)}:{port}"
     elif direct:

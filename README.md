@@ -759,13 +759,13 @@ TRACELOG runs as five services, one per container ([docs/SERVICES.md](docs/SERVI
 Streamlit Community Cloud runs one command, `streamlit run`, so on its own it would give the dashboard without the API. With `HOSTED_DEMO` on, the dashboard starts the API and two witnesses inside its own process, on threads, the first time someone opens it ([backend/hosted_demo.py](backend/hosted_demo.py)), and loads the demo data when the archive is empty: the multi-vendor samples, 150 WatchGuard lines for Parser Studio and a synthetic day of FortiGate traffic with 8 attacks, sealed and countersigned (about half a minute).
 
 1. On share.streamlit.io, **Create app** from this repository, branch `main`, main file **`frontend/app.py`** (the bundled fonts are served from the folder next to the main file).
-2. Under **Advanced settings**, choose Python 3.11 and put in **Secrets** (with the quotes: Streamlit makes only text, not `true`, into an environment variable):
+2. Under **Advanced settings**, choose Python 3.11 and put in **Secrets** (in an app already deployed: **Manage app → ⋮ → Settings → Secrets**, then **Reboot app**, since settings are read when the app starts):
    ```toml
    HOSTED_DEMO = "true"
    CERTIN_MODE = "true"
    DATA_LOCATION = "Demo instance on Streamlit Community Cloud"
    ```
-3. Deploy, open the app, and wait for the sidebar to change from *hosted demo, loading the demo data* to *hosted demo, inside this app*.
+3. Deploy, open the app, and wait for the sidebar to change from *hosted demo, loading the demo data* to *hosted demo, inside this app*. If it says *Running without the API*, `HOSTED_DEMO` did not reach the app (check the Secrets, then reboot); if it says *Hosted demo: API not running*, the reason follows, and the full error is under **Manage app → logs**.
 
 What a hosted demo is not, and the dashboard says so where it applies: its syslog and HTTP inputs listen inside the container, so no device on the internet can reach them; its witnesses share the container with the collector, so they show how witnessing works and protect nothing; and everything (archive, keys, witness records) is on the container's disk, gone when Streamlit restarts or wakes the app. Everyone who opens the link shares one archive. To keep logs, run TRACELOG with Docker (section 6) or `python run_app.py` on your own network.
 

@@ -12,6 +12,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import streamlit as st  # noqa: E402
+
+# Streamlit (Community Cloud's Secrets, or .streamlit/secrets.toml) makes top-level secrets environment
+# variables, which the settings below read, but only text and numbers: `HOSTED_DEMO = true` without quotes
+# would be dropped. Pass true/false on too, before the settings are read.
+try:
+    if st.secrets.load_if_toml_exists():
+        for _key, _value in st.secrets.items():
+            if isinstance(_value, bool):
+                os.environ.setdefault(_key, "true" if _value else "false")
+except Exception:  # noqa: BLE001  (no secrets, or a file Streamlit could not read: nothing to pass on)
+    pass
+
 from backend.config import settings  # noqa: E402
 from frontend import ui  # noqa: E402
 from frontend.api_client import APIClient  # noqa: E402

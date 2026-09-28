@@ -28,6 +28,8 @@ def test_sidebar_says_it_is_a_hosted_demo():
     assert "hosted demo, inside this app" in ui.status_block(True, True, "127.0.0.1", 8000, hosted={"data": "loaded"})
     assert "loading the demo data" in ui.status_block(True, True, "127.0.0.1", 8000, hosted={"data": "loading"})
     assert "127.0.0.1:8000" in ui.status_block(True, True, "127.0.0.1", 8000)
+    failed = ui.status_block(False, True, "127.0.0.1", 8000, hosted={"error": "RuntimeError: the API did not start"})
+    assert "Hosted demo: API not running" in failed and "the API did not start" in failed
 
 
 @pytest.mark.skipif(not signing.HAVE_CRYPTO, reason="signed checkpoints need cryptography")
