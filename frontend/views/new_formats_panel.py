@@ -51,8 +51,13 @@ def render_new_formats() -> None:
     rows = [f for f in all_formats if want is None or f["status"] == want]
     focus = st.session_state.pop("fmt_focus", None)   # the format just approved or ignored stays open
     if focus:
-        rows += [f for f in all_formats if f["format_id"] == focus and f not in rows]
         st.session_state["fmt_pick"] = focus
+    # The format under review stays in the list after it leaves this view (approved: In use; ignored), so the
+    # buttons in its panel keep working: without it, clicking "Re-parse past lines" or "Stop ignoring" reran
+    # the page without the panel, and the click was lost.
+    picked = st.session_state.get("fmt_pick")
+    if picked:
+        rows += [f for f in all_formats if f["format_id"] == picked and f not in rows]
     if not rows:
         st.caption("No formats in this view.")
         return

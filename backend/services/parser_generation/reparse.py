@@ -69,7 +69,7 @@ def reparse_history(parser_id: str, reason: Optional[str] = None, limit: Optiona
                     break
                 stats["examined"] += 1
                 try:
-                    _, parsed = parse_log(r["raw_text"])
+                    pack, parsed = parse_log(r["raw_text"])
                 except Exception:
                     logger.exception("re-parse failed for raw %s", r["raw_id"])
                     stats["failed"] += 1
@@ -77,7 +77,7 @@ def reparse_history(parser_id: str, reason: Optional[str] = None, limit: Optiona
                 if (parsed.get("tracelog_parse") or {}).get("parser_id") != parser_id:
                     stats["unchanged"] += 1
                     continue
-                normalized = _revise(conn, r, parsed, parser_id, row, reason)
+                normalized = _revise(conn, r, parsed, parser_id, row, reason, pack)
                 stats["revised"] += 1
                 stats["first_sequence"] = stats["first_sequence"] or normalized["metadata"]["sequence_num"]
                 stats["last_sequence"] = normalized["metadata"]["sequence_num"]
@@ -93,7 +93,8 @@ def reparse_history(parser_id: str, reason: Optional[str] = None, limit: Optiona
     return stats
 
 
-def _revise(conn, r, parsed: Dict[str, Any], parser_id: str, parser_row, reason: str) -> Dict[str, Any]:
+def _revise(conn, r, parsed: Dict[str, Any], parser_id: str, parser_row, reason: str,
+            pack: str = learned.PACK) -> Dict[str, Any]:
     latest = IntegrityLedger.get_latest_entry(conn)
     seq = (latest["sequence_num"] + 1) if latest else 1
     event_id = str(uuid.uuid4())
@@ -110,7 +111,9 @@ def _revise(conn, r, parsed: Dict[str, Any], parser_id: str, parser_row, reason:
         "supersedes": r["event_id"], "supersedes_sequence": r["sequence_num"], "revision": revision,
         "parser_id": parser_id, "parser": parser_row["name"], "approved_by": parser_row["approved_by"],
         "reason": reason}
-    normalized = store_event(conn, ev, event_id, seq, r["raw_id"], r["raw_hash"])
+    # `pack` fills the parser_pack column the dashboard counts by, as the ingest path does: without it the
+    # revision was counted as read by the generic parser, though the learned parser produced it
+    normalized = store_event(conn, ev, event_id, seq, r["raw_id"], r["raw_hash"], pack)
     conn.execute(
         "INSERT INTO event_revisions (event_id, sequence_num, supersedes_event_id, supersedes_sequence, raw_id, "
         "parser_id, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",

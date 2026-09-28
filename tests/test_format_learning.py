@@ -127,6 +127,12 @@ def test_learn_review_approve_apply_and_reparse(db):
     assert pipe["consistent"] and pipe["raw_archived"] == pipe["original_events"] == 120
     assert pipe["revisions"] == 120 and pipe["hash_chained"] == pipe["normalized"] == 240
 
+    # the dashboard counts the revisions as read by the learned parser (Overview, Parsed by a known parser)
+    from backend.services.analytics.quality import parse_breakdown
+    with db.get_connection() as conn:
+        counted = parse_breakdown(conn)
+    assert counted["learned"] == 120 and counted["generic"] == 0 and counted["known_parser_pct"] == 100.0
+
     from backend.api.events import list_events
     listed = list_events(limit=500, offset=0, include_superseded=False)
     assert listed["total"] == 120 and all(e["src_ip"] for e in listed["events"])

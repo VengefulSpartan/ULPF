@@ -96,6 +96,35 @@ def test_every_page_renders_without_an_error(dashboard, page):
     assert not at.exception, [e.value for e in at.exception]
 
 
+def test_the_format_under_review_stays_open_to_re_parse_after_approval(dashboard):
+    """Approving moves a format out of the New view. Its panel must stay open, or the next click, on
+    Re-parse past lines, reruns the page without the button and is lost."""
+    from streamlit.testing.v1 import AppTest
+    from backend.services.parser_generation import learned, workflow
+    from backend.services.parsing.formats import list_formats, registry
+    from tests.format_samples import lines, watchguard
+    registry.forget_cache()
+    learned.invalidate()
+    try:
+        _ingest(lines(watchguard(60)))
+        with dashboard.get_connection() as conn:
+            fmt = max(list_formats(conn), key=lambda f: f["count"])
+        cand = workflow.learn_format(fmt["format_id"], vendor="WatchGuard", product="Firebox")
+        workflow.approve(cand["id"], "asha", [s["id"] for s in cand["needs_review"]])
+
+        at = AppTest.from_string("from frontend import ui\nui.apply_theme()\nfrom frontend.views.new_formats_panel "
+                                 "import render_new_formats\nrender_new_formats()\n", default_timeout=60)
+        at.session_state["fmt_pick"] = fmt["format_id"]   # the panel the reviewer had open when approving
+        at.run()
+        assert not at.exception and at.segmented_control(key="fmt_filter").value == "New"
+        at.button(key=f"reparse_{cand['id']}").click().run()
+        assert not at.exception
+        assert any("60 events revised" in s.value for s in at.success), [s.value for s in at.success]
+    finally:
+        registry.forget_cache()
+        learned.invalidate()
+
+
 # ------------------------------------------------------------------ log text never becomes markup
 def test_log_text_is_escaped_in_every_chart():
     outputs = [
